@@ -2,9 +2,14 @@ project:
   type: website
 
 website:
-  title: "ISSS608-VAA"
+  title: "Trinh Minh Tam Visual Analytics Website"
   navbar:
     left:
+      - text: "Hands-on Exercise"
+        menu: 
+          - text: "Hands-on Exercise 1"
+            href: hands-on1.qmd
+    right: 
       - href: index.qmd
         text: Home
       - about.qmd
@@ -12,7 +17,7 @@ website:
 format:
   html:
     theme:
-      - cosmo
+      - journal
       - brand
     css: styles.css
     toc: true

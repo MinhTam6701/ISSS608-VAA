@@ -1,0 +1,19 @@
+---
+title: "Hands-on Exercise 1"
+author: "Trinh Minh Tam"
+date: "April 18, 2026"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  warning: false
+  freeze: true
+---
+
+```{r}
+pacman::p_load(tidyverse)
+```
+
+```{r}
+exam_data <- read_csv("Data/Exam_data.csv")
+```
