@@ -1,5 +1,6 @@
 ---
 title: "2 Beyond ggplot2 Fundamentals"
+format: html
 author: "Trinh Minh Tam"
 date: "April 23, 2026"
 date-modified: "last-modified"
@@ -36,11 +37,13 @@ In this exercise, beside tidyverse, four R packages will be used. They are:
 
 Code chunk below will be used to check if these packages have been installed and also will load them onto your working R environment.
 
+::: {style="font-size: 1.4em"}
 ```{r}
 pacman::p_load(ggrepel, patchwork, 
                ggthemes, hrbrthemes,
                tidyverse, ggplot2) 
 ```
+:::
 
 ### 2.2.2 Importing data
 
@@ -48,9 +51,11 @@ For the purpose of this exercise, a data file called *Exam_data* will be used. I
 
 The code chunk below imports *exam_data.csv* into R environment by using [*read_csv()*](https://readr.tidyverse.org/reference/read_delim.html) function of [**readr**](https://readr.tidyverse.org/) package. **readr** is one of the tidyverse package.
 
+::: {style="font-size: 1.4em"}
 ```{r}
 exam_data <- read_csv("../Data/Exam_data.csv")
 ```
+:::
 
 There are a total of seven attributes in the exam_data tibble data frame. Four of them are categorical data type and the other three are in continuous data type.
 

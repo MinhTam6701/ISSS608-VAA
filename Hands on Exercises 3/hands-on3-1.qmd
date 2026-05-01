@@ -1,0 +1,13 @@
+---
+title: "3  Programming Interactive Data Visualisation with R"
+format: html
+author: "Trinh Minh Tam"
+date: "April 29, 2026"
+date-modified: "last-modified"
+execute: 
+  eval: true
+  echo: true
+  warning: false
+  freeze: true
+---
+
