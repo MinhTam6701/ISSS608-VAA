@@ -72,6 +72,8 @@ globalPop <- read_xls("c../Data/GlobalPopulation.xls",
 ```
 
 ::: callout-note
+## Things to learn from the code chunk above
+
 -   [`read_xls()`](https://readxl.tidyverse.org/reference/read_excel.html) of **readxl** package is used to import the Excel worksheet.
 
 -   `mutate_each_()` of dplyr package is used to convert all character data type into factor.
