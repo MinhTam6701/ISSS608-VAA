@@ -19,6 +19,8 @@ website:
             href: Hands on Exercises 4\hands-on4-2.qmd
           - text: "Hands-on Exercise 4.3"
             href: Hands on Exercises 4\hands-on4-3.qmd
+          - text: "Hands-on Exercise 4.4"
+            href: Hands on Exercises 4\hands-on4-4.qmd
 
     right: 
       - href: index.qmd
