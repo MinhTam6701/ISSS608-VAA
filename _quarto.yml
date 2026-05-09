@@ -7,22 +7,30 @@ website:
     left:
       - text: "Hands-on Exercise"
         menu: 
-          - text: "Hands-on Exercise 1"
+          - text: "Hands-on Exercise 1 (Chap 1)"
             href: Hands on Exercises 1\hands-on1.qmd
-          - text: "Hands-on Exercise 2"
+          - text: "Hands-on Exercise 2(Chap 2)"
             href: Hands on Exercises 2\hands-on2.qmd
-          - text: "Hands-on Exercise 3.1"
+          - text: "Hands-on Exercise 3.1 (Chap 3)"
             href: Hands on Exercises 3\hands-on3-1.qmd
-          - text: "Hands-on Exercise 3.2"
+          - text: "Hands-on Exercise 3.2 (Chap 4)"
             href: Hands on Exercises 3\hands-on3-2.qmd
-          - text: "Hands-on Exercise 4.1"
+          - text: "Hands-on Exercise 4.1 (Chap 8)"
             href: Hands on Exercises 4\hands-on4-1.qmd
-          - text: "Hands-on Exercise 4.2"
+          - text: "Hands-on Exercise 4.2 (Chap 9)"
             href: Hands on Exercises 4\hands-on4-2.qmd
-          - text: "Hands-on Exercise 4.3"
+          - text: "Hands-on Exercise 4.3 (Chap 10)"
             href: Hands on Exercises 4\hands-on4-3.qmd
-          - text: "Hands-on Exercise 4.4"
+          - text: "Hands-on Exercise 4.4 (Chap 11)"
             href: Hands on Exercises 4\hands-on4-4.qmd
+          - text: "Hands-on Exercise 5.1 (Chap 13)"
+            href: Hands on Exercises 5\hands-on5-1.qmd
+      - text: "Take home Exercise 1"
+        menu: 
+          - text: "Executive Summary"
+            href: Hands on Exercises 1\hands-on1.qmd
+          - text: "Technical Report"
+            href: Hands on Exercises 1\hands-on1.qmd
 
     right: 
       - href: index.qmd
