@@ -31,6 +31,8 @@ website:
             href: Hands on Exercises 5\hands-on5-3.qmd
           - text: "Hands-on Exercise 5.4 (Chap 15)"
             href: Hands on Exercises 5\hands-on5-4.qmd
+          - text: "Hands-on Exercise 5.5 (Chap 16)"
+            href: Hands on Exercises 5\hands-on5-5.qmd
       - text: "Take home Exercise 1"
         menu: 
           - text: "Executive Summary"
