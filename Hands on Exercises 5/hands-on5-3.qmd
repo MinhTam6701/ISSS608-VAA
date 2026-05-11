@@ -2,7 +2,7 @@
 title: "14 Heatmap for Visualising and Analysing Multivariate Data"
 format: html
 author: "Trinh Minh Tam"
-date: "May 09, 2026"
+date: "May 11, 2026"
 date-modified: "last-modified"
 execute: 
   eval: true
