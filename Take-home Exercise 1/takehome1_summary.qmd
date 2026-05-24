@@ -93,6 +93,8 @@ BRAND_PALETTE <- c("TP"="#4E79A7","TPG"="#F28E2B","CC"="#59A14F",
                    "COMP_E"="#E15759","COMP_N"="#76B7B2")
 ```
 
+## Introduction {background-color="#2C3E50"}
+
 ```{=html}
 <style>
 /* Reduce overall reveal font size */
@@ -112,8 +114,6 @@ BRAND_PALETTE <- c("TP"="#4E79A7","TPG"="#F28E2B","CC"="#59A14F",
 ```
 
 
-## Introduction {background-color="#2C3E50"}
-
 > "Leveraging visual analytics can potentially help investigate trends in underlying loss drivers, while data enrichment can help refine segmentation and underwriting strategy." — *Swiss Re, sigma 4/2019*
 
 **Objectives:**
@@ -121,7 +121,7 @@ BRAND_PALETTE <- c("TP"="#4E79A7","TPG"="#F28E2B","CC"="#59A14F",
 -   Explore distributions of **numerical** and **categorical** portfolio variables
 -   Statistically validate key factors driving **profitability** (loss ratio) and **volatility** (claim frequency)
 
-[📖 Full technical report →](takehome1_technical.html)
+[Full technical report →](takehome1_technical.html)
 
 ::: notes
 This presentation summarises the visual analytics investigation of a real Spanish motor vehicle insurance portfolio. All analyses use non-parametric tests because the key metrics are heavily right-skewed and zero-inflated. For full methodology, code, and complete results, refer to the technical report.
@@ -154,7 +154,7 @@ This presentation summarises the visual analytics investigation of a real Spanis
 | **Avg. Severity** | Incurred / Claims | Cost per claim |
 
 ::: {style="background:#fff8e1; border-left:4px solid #F28E2B; padding:8px 12px; margin-top:14px; font-size:0.82em; border-radius:3px;"}
-⚠️ **Key context:** Loss ratio and claim frequency are **zero-inflated** — most policies have no claims, so all group medians equal 0.00. Risk differences appear in the **upper tail**, not the median.
+**Key context:** Loss ratio and claim frequency are **zero-inflated** — most policies have no claims, so all group medians equal 0.00. Risk differences appear in the **upper tail**, not the median.
 :::
 :::
 :::
@@ -163,7 +163,7 @@ This presentation summarises the visual analytics investigation of a real Spanis
 The dataset covers three calendar years. 1,975 records with LR > 50 were excluded as catastrophic outliers. Understanding zero-inflation is critical — it means we must use rank-based non-parametric tests and examine distributional tails rather than means or medians.
 :::
 
-[📖 Data wrangling →](takehome1_technical.html#data-wrangling)
+[Data wrangling →](takehome1_technical.html#data-wrangling)
 
 ---
 
@@ -204,7 +204,7 @@ motor_ana |>
 - Portfolio volumes are broadly **stable 2022–2024** with a modest uptick in 2024
 
 ::: {style="background:#e8f4f8; border-left:4px solid #4E79A7; padding:8px 10px; margin-top:10px; border-radius:3px;"}
-💡 CC dominance means profitability and volatility are primarily driven by this product line, even though COMP_N/COMP_E carry higher individual risk.
+CC dominance means profitability and volatility are primarily driven by this product line, even though COMP_N/COMP_E carry higher individual risk.
 :::
 :::
 :::
@@ -214,7 +214,7 @@ motor_ana |>
 CC is the dominant product. COMP_N is near-absent, indicating strong market preference for the excess variant COMP_E. Portfolio volumes are stable across 2022–2024 with a modest increase in 2024.
 :::
 
-[📖 Full analysis →](takehome1_technical.html#policy-portfolio-composition)
+[Full analysis →](takehome1_technical.html#policy-portfolio-composition)
 
 ---
 
@@ -260,16 +260,16 @@ p4 <- plot_bar(motor_ana, municipality_type, "Municipality",  "#B07AA1")
 ::: {style="font-size:0.79em; padding-left:6px;"}
 **Key segmentation facts:**
 
-🟢 **Bonus Score:** 96.4% of policyholders are in the **Good** category — a very low-risk base with limited adverse selection exposure
+**Bonus Score:** 96.4% of policyholders are in the **Good** category — a very low-risk base with limited adverse selection exposure
 
-🟠 **Business Type:** **New Business dominates at 69.3%** vs Portfolio 30.7% — likely reflects first-year policy classification in this dataset
+**Business Type:** **New Business dominates at 69.3%** vs Portfolio 30.7% — likely reflects first-year policy classification in this dataset
 
-🔵 **Circulation:** Urban (53.8%) > Rural (46.2%) — urban concentration brings higher collision and theft exposure
+**Circulation:** Urban (53.8%) > Rural (46.2%) — urban concentration brings higher collision and theft exposure
 
-🟣 **Municipality:** Inland (64.6%) accounts for the majority, consistent with Spain's population distribution
+**Municipality:** Inland (64.6%) accounts for the majority, consistent with Spain's population distribution
 
 ::: {style="background:#f0faf0; border-left:4px solid #59A14F; padding:8px 10px; margin-top:10px; border-radius:3px;"}
-💡 The 96.4% Good-score concentration is the portfolio's key structural advantage — it naturally suppresses overall claim frequency.
+The 96.4% Good-score concentration is the portfolio's key structural advantage — it naturally suppresses overall claim frequency.
 :::
 :::
 :::
@@ -279,7 +279,7 @@ p4 <- plot_bar(motor_ana, municipality_type, "Municipality",  "#B07AA1")
 96.4% Good bonus — very low adverse selection. New Business dominates at 69.3%. Urban and inland concentrations are consistent with Spanish fleet distribution.
 :::
 
-[📖 Full distributions →](takehome1_technical.html#key-categorical-variable-distributions)
+[Full distributions →](takehome1_technical.html#key-categorical-variable-distributions)
 
 ---
 
@@ -325,7 +325,7 @@ motor_ana |>
 - **TP** is almost entirely a sharp spike at 0 — virtually all TP policies are cost-free to the insurer
 
 ::: {style="background:#fff3e0; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
-⚠️ All subsequent statistical tests detect **tail differences**, not median differences. This is by design, not a limitation.
+All subsequent statistical tests detect **tail differences**, not median differences. This is by design, not a limitation.
 :::
 :::
 :::
@@ -335,7 +335,7 @@ motor_ana |>
 Zero-inflation means all medians are 0.00. The ridgeline exposes what box plots hide — the distributional shape. COMP_N has a heavier tail past break-even. This slide sets up the interpretation framework for all ggbetweenstats slides that follow.
 :::
 
-[📖 Full ridgeline analysis →](takehome1_technical.html#loss-ratio-distribution-ridgeline-plot)
+[Full ridgeline analysis →](takehome1_technical.html#loss-ratio-distribution-ridgeline-plot)
 
 ---
 
@@ -374,7 +374,7 @@ ggbetweenstats(
 - **Effect size** is small but consistent, confirming this is a real signal, not noise
 
 ::: {style="background:#fce4ec; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
-💡 **Bonus score is the single strongest profitability predictor** in this portfolio — it discriminates risk meaningfully at every tier, not just at the extremes.
+**Bonus score is the single strongest profitability predictor** in this portfolio — it discriminates risk meaningfully at every tier, not just at the extremes.
 :::
 :::
 :::
@@ -384,7 +384,7 @@ ggbetweenstats(
 All three pairwise comparisons significant after BH correction. Medians all 0.00 — test detects tail differences. Bad segment drives the portfolio's unprofitable large claims. Strongest single profitability predictor.
 :::
 
-[📖 Full analysis →](takehome1_technical.html#effect-of-bonus-score-on-loss-ratio)
+[Full analysis →](takehome1_technical.html#effect-of-bonus-score-on-loss-ratio)
 
 ---
 
@@ -423,7 +423,7 @@ ggbetweenstats(
 - **TP and TPG** are the most profitable lines — their narrow liability-only scope rarely generates large incurred costs
 
 ::: {style="background:#fce4ec; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
-💡 **COMP_N warrants a pricing adequacy review** — its no-excess structure drives disproportionate tail risk relative to COMP_E.
+**COMP_N warrants a pricing adequacy review** — its no-excess structure drives disproportionate tail risk relative to COMP_E.
 :::
 :::
 :::
@@ -433,7 +433,7 @@ ggbetweenstats(
 All medians 0.00. COMP_N has heaviest tail. Deductible in COMP_E is a meaningful risk brake. TP/TPG most profitable. Supports differential pricing between COMP_E and COMP_N.
 :::
 
-[📖 Full analysis →](takehome1_technical.html#effect-of-policy-type-on-loss-ratio)
+[Full analysis →](takehome1_technical.html#effect-of-policy-type-on-loss-ratio)
 
 ---
 
@@ -475,7 +475,7 @@ ggscatterstats(
 - Spearman rank correlation is the right choice here — neither variable is normally distributed
 
 ::: {style="background:#e8f4f8; border-left:4px solid #4E79A7; padding:8px 10px; margin-top:10px; border-radius:3px;"}
-💡 Age is a **secondary pricing factor** — real and significant, but smaller in magnitude than bonus score or policy type.
+Age is a **secondary pricing factor** — real and significant, but smaller in magnitude than bonus score or policy type.
 :::
 :::
 :::
@@ -485,7 +485,7 @@ ggscatterstats(
 Negative Spearman correlation confirmed. Under-30 concentration of elevated LR. Marginal histograms show zero-inflation and bell-shaped age distribution. Age is a secondary but significant factor.
 :::
 
-[📖 Full analysis →](takehome1_technical.html#relationship-driver-age-vs-loss-ratio)
+[Full analysis →](takehome1_technical.html#relationship-driver-age-vs-loss-ratio)
 
 ---
 
@@ -529,7 +529,7 @@ ggbetweenstats(
 - For **bonus score** and frequency, only the **Bad–Good** comparison is significant — a weaker effect than on loss ratio
 
 ::: {style="background:#fce4ec; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
-💡 Frequency and severity compound for COMP_N — **both** dimensions must be addressed in any pricing review.
+Frequency and severity compound for COMP_N — **both** dimensions must be addressed in any pricing review.
 :::
 :::
 :::
@@ -539,7 +539,7 @@ ggbetweenstats(
 All medians 0.00. COMP_N > COMP_E > CC > TP ordering confirmed. No-excess removes claim barrier. Compounding frequency + severity effect for comprehensive products.
 :::
 
-[📖 Full volatility analysis →](takehome1_technical.html#volatility-analysis-claim-frequency)
+[Full volatility analysis →](takehome1_technical.html#volatility-analysis-claim-frequency)
 
 ---
 
@@ -591,7 +591,7 @@ p_bonus_bar + p_fuel_bar
 - Diesel vehicles carry more COMP_E/COMP_N policies, which have more claimable event types (glass, theft, own damage)
 
 ::: {style="background:#f0faf0; border-left:4px solid #59A14F; padding:8px 10px; margin-top:8px; border-radius:3px;"}
-💡 Fuel type is a **proxy** for vehicle profile, not a direct risk driver. It loses significance once policy type is controlled for.
+Fuel type is a **proxy** for vehicle profile, not a direct risk driver. It loses significance once policy type is controlled for.
 :::
 :::
 :::
@@ -601,7 +601,7 @@ p_bonus_bar + p_fuel_bar
 Binary incidence proportions — not affected by zero-inflation. Bad 22% vs Good 14% is 1.6× difference. Diesel 15% vs gasoline 12% is driven by coverage mix, not fuel type per se.
 :::
 
-[📖 Full association analysis →](takehome1_technical.html#claim-incidence-by-fuel-type-association-test)
+[Full association analysis →](takehome1_technical.html#claim-incidence-by-fuel-type-association-test)
 
 ---
 
@@ -657,7 +657,7 @@ ggplot(brand_summary,
 - Some **mid-volume brands** show surprisingly high LRs, suggesting possible under-pricing in those segments
 
 ::: {style="background:#e8f4f8; border-left:4px solid #4E79A7; padding:8px 10px; margin-top:8px; border-radius:3px;"}
-💡 This view enables **brand-level underwriting decisions** — something a standard bar chart cannot show.
+This view enables **brand-level underwriting decisions** — something a standard bar chart cannot show.
 :::
 :::
 :::
@@ -667,7 +667,7 @@ ggplot(brand_summary,
 Treemap communicates two dimensions simultaneously: concentration (tile size) and profitability (colour). Mass-market brands dominate. Smaller red tiles are luxury/performance brands with elevated LR. Enables brand-level underwriting decisions.
 :::
 
-[📖 Full treemap analysis →](takehome1_technical.html#treemap-vehicle-brand-portfolio-share)
+[Full treemap analysis →](takehome1_technical.html#treemap-vehicle-brand-portfolio-share)
 
 ---
 
@@ -677,11 +677,11 @@ Treemap communicates two dimensions simultaneously: concentration (tile size) an
 ::: {.column width="50%"}
 **Profitability (Loss Ratio)**
 
-- 🔴 **Bonus score** → strongest predictor; all three tiers significantly different
-- 🔴 **COMP_N / COMP_E** → heaviest upper-tail distributions *(all medians = 0.00)*
-- 🟡 **Young drivers** (<25) → broadest, most right-tailed distributions
-- 🟡 **Urban circulation** → statistically higher loss ratio than rural
-- 🟢 **TP / TPG** → tightest, lowest-risk distributions
+- **Bonus score** → strongest predictor; all three tiers significantly different
+- **COMP_N / COMP_E** → heaviest upper-tail distributions *(all medians = 0.00)*
+- **Young drivers** (<25) → broadest, most right-tailed distributions
+- **Urban circulation** → statistically higher loss ratio than rural
+- **TP / TPG** → tightest, lowest-risk distributions
 
 **Claim Incidence**
 
@@ -692,10 +692,10 @@ Treemap communicates two dimensions simultaneously: concentration (tile size) an
 ::: {.column width="50%"}
 **Volatility (Claim Frequency)**
 
-- 🔴 **COMP_N > COMP_E > CC > TP** — frequency tail mirrors loss ratio ordering
-- 🔴 Compounding effect: comprehensive drives **both** higher frequency **and** higher severity
-- 🟡 **Bad–Good** bonus comparison is significant (weaker than LR effect)
-- 🟢 Good bonus (96.4% of portfolio) → natural frequency protection
+- **COMP_N > COMP_E > CC > TP** — frequency tail mirrors loss ratio ordering
+- Compounding effect: comprehensive drives **both** higher frequency **and** higher severity
+- **Bad–Good** bonus comparison is significant (weaker than LR effect)
+- Good bonus (96.4% of portfolio) → natural frequency protection
 
 ::: {style="background:#fff3e0; border-left:4px solid #F28E2B; padding:10px 14px; margin-top:12px; border-radius:3px; font-size:0.88em;"}
 **Strategic implication:**
@@ -709,4 +709,4 @@ Pricing models should prioritise **bonus score** and **policy type** as primary 
 Bonus score and policy type are dominant. COMP_N carries compounding risk. Driver age and circulation area are secondary. Good-score concentration is the portfolio's key structural advantage.
 :::
 
-[📖 Full summary →](takehome1_technical.html#summary-of-key-findings)
+[Full summary →](takehome1_technical.html#summary-of-key-findings)
