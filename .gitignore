@@ -7,3 +7,6 @@
 
 /.quarto/
 **/*.quarto_ipynb
+
+Data/
+Take-home Exercise 1/data/

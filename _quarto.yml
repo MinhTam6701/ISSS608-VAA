@@ -36,9 +36,9 @@ website:
       - text: "Take home Exercise 1"
         menu: 
           - text: "Executive Summary"
-            href: Hands on Exercises 1\hands-on1.qmd
+            href: Take-home Exercise 1\takehome1_summary.qmd
           - text: "Technical Report"
-            href: Hands on Exercises 1\hands-on1.qmd
+            href: Take-home Exercise 1\takehome1_technical.qmd
 
     right: 
       - href: index.qmd
