@@ -671,6 +671,81 @@ Treemap communicates two dimensions simultaneously: concentration (tile size) an
 
 ---
 
+## Year-over-Year Profitability Trend {.smaller}
+
+::: columns
+::: {.column width="62%"}
+```{r}
+#| fig-height: 3.8
+#| out-width: "100%"
+
+yearly_trend <- motor_ana |>
+  group_by(year, policy_type) |>
+  summarise(
+    avg_loss_ratio = mean(loss_ratio, na.rm = TRUE),
+    avg_claim_freq = mean(claim_frequency, na.rm = TRUE),
+    n_policies     = n(),
+    .groups        = "drop"
+  )
+
+p_lr_trend <- ggplot(yearly_trend,
+                     aes(x = year, y = avg_loss_ratio,
+                         colour = policy_type, group = policy_type)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.8) +
+  scale_colour_manual(values = BRAND_PALETTE, name = "Policy Type") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Average Loss Ratio by Year",
+       x = NULL, y = "Avg Loss Ratio") +
+  theme_minimal(base_size = 10) +
+  theme(plot.title = element_text(face = "bold", size = 11),
+        legend.position = "none")
+
+p_cf_trend <- ggplot(yearly_trend,
+                     aes(x = year, y = avg_claim_freq,
+                         colour = policy_type, group = policy_type)) +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.8) +
+  scale_colour_manual(values = BRAND_PALETTE, name = "Policy Type") +
+  labs(title = "Average Claim Frequency by Year",
+       x = NULL, y = "Avg Claim Freq") +
+  theme_minimal(base_size = 10) +
+  theme(plot.title = element_text(face = "bold", size = 11),
+        legend.position = "bottom")
+
+p_lr_trend / p_cf_trend +
+  plot_annotation(
+    title   = "Portfolio Trajectory 2022 - 2024",
+    caption = "Source: Spanish Motor Insurance Portfolio",
+    theme   = theme(plot.title = element_text(face = "bold", size = 12))
+  )
+```
+:::
+
+::: {.column width="38%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**What the trend reveals:**
+
+- **COMP_N** loss ratio shows the steepest year-on-year deterioration, widening the gap with COMP_E - early warning that the no-excess pricing structure may not be keeping pace with claim severity
+- **CC** (largest book) remains the most stable line, suggesting current pricing is broadly adequate for the dominant product
+- **TP / TPG** stay consistently low and flat - mature, well-priced liability-only lines
+- **Claim frequency** is more stable than loss ratio across years, meaning recent deterioration is driven primarily by **rising severity**, not more accidents
+
+::: {style="background:#fce4ec; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+The 3-year trajectory **reinforces and dates** the cross-sectional finding: COMP_N risk is not just structural - it is **getting worse**.
+:::
+:::
+:::
+:::
+
+::: notes
+Three-year trajectory adds the time dimension to the cross-sectional analysis. COMP_N loss ratio deteriorates fastest. Frequency is stable - rising loss ratios driven by severity, not more accidents. This is critical for forward-looking pricing decisions.
+:::
+
+[Technical detail →](takehome1_technical.html#temporal-analysis-year-over-year-trends)
+
+---
+
 ## Key Findings & Implications {.smaller}
 
 ::: columns
@@ -707,6 +782,68 @@ Pricing models should prioritise **bonus score** and **policy type** as primary 
 
 ::: notes
 Bonus score and policy type are dominant. COMP_N carries compounding risk. Driver age and circulation area are secondary. Good-score concentration is the portfolio's key structural advantage.
+:::
+
+[Full summary →](takehome1_technical.html#summary-of-key-findings)
+
+---
+
+## Conclusion & Recommendations {background-color="#2C3E50"}
+
+::: columns
+::: {.column width="55%"}
+::: {style="color:#ffffff; font-size:0.92em;"}
+**Three actionable recommendations** for the underwriting and pricing team, in priority order:
+
+::: {style="background:#E15759; padding:12px 16px; margin:10px 0; border-radius:4px;"}
+**1. Price COMP_N for the tail risk it carries**
+
+COMP_N shows the heaviest upper-tail loss ratio **and** the highest claim frequency **and** the steepest year-on-year deterioration. Conduct a pricing adequacy review with a target loading of **+15% to +25%** versus COMP_E, plus consider mandatory excess on small claims.
+:::
+
+::: {style="background:#F28E2B; padding:12px 16px; margin:10px 0; border-radius:4px;"}
+**2. Tier bonus score with finer granularity**
+
+The Good–Neutral comparison is statistically significant (p ≈ 0.00002) - the current 3-tier structure under-discriminates. Move to a **5- or 7-tier system** with explicit rate differentials at each step.
+:::
+
+::: {style="background:#4E79A7; padding:12px 16px; margin:10px 0; border-radius:4px;"}
+**3. Apply a young-driver loading across all products**
+
+Drivers under 25 show broader, heavier-tailed loss distributions in **every** policy type. Add a **uniform 10–15% age loading** for under-25 drivers, with a step-down at 25 and 30.
+:::
+:::
+:::
+
+::: {.column width="45%"}
+::: {style="color:#ffffff; font-size:0.85em; padding-left:8px;"}
+**Expected portfolio impact**
+
+::: {style="background:#34495E; padding:10px 14px; margin-top:8px; border-left:4px solid #59A14F; border-radius:3px;"}
+✓ **Tail risk reduction** in the COMP_N segment, which drives a disproportionate share of large incurred losses
+
+✓ **Sharper risk selection** through bonus tiering — particularly useful for retention pricing on Neutral-tier renewals
+
+✓ **Margin protection** against the rising-severity trend identified in the year-over-year analysis
+:::
+
+**What this analysis does *not* answer**
+
+::: {style="background:#34495E; padding:10px 14px; margin-top:10px; border-left:4px solid #76B7B2; border-radius:3px;"}
+- Multivariate interactions (e.g. young driver **and** COMP_N) - requires a GLM
+- Customer lifetime value and elasticity to price changes
+- External factors: inflation, vehicle parts supply, regulatory changes
+:::
+
+::: {style="background:#34495E; padding:10px 14px; margin-top:10px; border-left:4px solid #F28E2B; border-radius:3px; font-size:0.92em;"}
+**Next step:** build a GLM with these three factors as primary terms and validate on a 2024 hold-out sample.
+:::
+:::
+:::
+:::
+
+::: notes
+Three priority recommendations: COMP_N tail-risk pricing, finer bonus tiering, young driver loading. Each is grounded in a statistical finding from the analysis. Expected impact covers tail risk, risk selection, and trend protection. The slide is honest about what the analysis cannot answer - multivariate interactions, elasticity, and external factors - and proposes a GLM as the next step.
 :::
 
 [Full summary →](takehome1_technical.html#summary-of-key-findings)

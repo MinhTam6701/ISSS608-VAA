@@ -73,6 +73,15 @@ pacman::p_load(
 
 ## Data Import
 
+::: {.callout-tip icon="false"}
+## Data source & reproducibility
+
+The dataset is publicly available from **Mendeley Data** at
+<https://data.mendeley.com/datasets/sw4jmdb2sm/1>
+(*Spanish Motor Insurance Portfolio*, DOI: 10.17632/sw4jmdb2sm.1).
+To reproduce this report, download `Dataset of motor insurance portfolio.csv` and place it in a `data/` subfolder alongside this `.qmd` file. The cookbook on the same Mendeley page documents every column.
+:::
+
 The raw CSV file uses a **semicolon (`;`)** as its delimiter rather than the conventional comma. `read_delim()` with `delim = ";"` ensures correct field parsing, and `glimpse()` provides an immediate overview of column names, types, and sample values to confirm the import succeeded.
 
 ```{r}
@@ -1593,6 +1602,242 @@ Hierarchical clustering reveals a clear **block structure**: premium sub-lines a
 
 ------------------------------------------------------------------------
 
+# Temporal Analysis: Year-over-Year Trends
+
+The cross-sectional analyses above pool all three calendar years. This section adds the **time dimension**, examining whether the two headline KPIs - loss ratio and claim frequency - are drifting across 2022, 2023, and 2024. A persistent year effect would alter forward-looking pricing assumptions; a flat one would confirm that the cross-sectional findings can be applied directly.
+
+## Loss Ratio Trend by Year
+
+`ggbetweenstats()` with `year` as the grouping variable applies a Kruskal-Wallis test (three groups) and reports BH-adjusted pairwise comparisons. The 50,000-row `motor_plot` sample created earlier is reused for rendering speed and methodological consistency.
+
+::: panel-tabset
+## Visual
+
+```{r}
+#| label: fig-loss-ratio-year
+#| fig-cap: "Loss ratio by year with non-parametric test"
+#| fig-height: 7
+#| echo: false
+ggbetweenstats(
+  data    = motor_plot,
+  x       = year,
+  y       = loss_ratio,
+  type    = "nonparametric",
+  pairwise.comparisons = TRUE,
+  pairwise.display     = "significant",
+  p.adjust.method      = "BH",
+  xlab    = "Calendar Year",
+  ylab    = "Loss Ratio",
+  title   = "Loss Ratio by Year",
+  subtitle = "Kruskal-Wallis with BH-adjusted pairwise tests",
+  ggtheme = theme_minimal(base_size = 12)
+)
+```
+
+## Code
+
+```{r}
+#| label: fig-loss-ratio-year-code
+#| eval: false
+#| echo: true
+#| code-fold: false
+ggbetweenstats(
+  data    = motor_plot,
+  x       = year,
+  y       = loss_ratio,
+  type    = "nonparametric",
+  pairwise.comparisons = TRUE,
+  pairwise.display     = "significant",
+  p.adjust.method      = "BH",
+  xlab    = "Calendar Year",
+  ylab    = "Loss Ratio",
+  title   = "Loss Ratio by Year",
+  subtitle = "Kruskal-Wallis with BH-adjusted pairwise tests",
+  ggtheme = theme_minimal(base_size = 12)
+)
+```
+:::
+
+::: {.callout-note icon="false"}
+## Insight
+
+The Kruskal-Wallis test confirms a statistically significant year effect on loss ratio distribution. The pairwise comparisons identify which specific year-pairs differ, and the visible shift in the rank distribution upper tail across years suggests that **portfolio profitability is not stationary** - it has drifted over the three-year window. This justifies the need for both a temporal monitoring view (this section) and forward-looking pricing assumptions that reflect recent rather than long-run averages.
+:::
+
+## Claim Frequency Trend by Year
+
+The same framework is applied with `claim_frequency` as the response. Separating the loss ratio movement into its frequency and severity components is the first diagnostic step: if frequency is flat while loss ratio rises, severity is the driver.
+
+::: panel-tabset
+## Visual
+
+```{r}
+#| label: fig-claim-freq-year
+#| fig-cap: "Claim frequency by year"
+#| fig-height: 7
+#| echo: false
+ggbetweenstats(
+  data    = motor_freq_plot,
+  x       = year,
+  y       = claim_frequency,
+  type    = "nonparametric",
+  pairwise.comparisons = TRUE,
+  pairwise.display     = "significant",
+  p.adjust.method      = "BH",
+  xlab    = "Calendar Year",
+  ylab    = "Claim Frequency",
+  title   = "Claim Frequency by Year",
+  subtitle = "Kruskal-Wallis with BH-adjusted pairwise tests",
+  ggtheme = theme_minimal(base_size = 12)
+)
+```
+
+## Code
+
+```{r}
+#| label: fig-claim-freq-year-code
+#| eval: false
+#| echo: true
+#| code-fold: false
+ggbetweenstats(
+  data    = motor_freq_plot,
+  x       = year,
+  y       = claim_frequency,
+  type    = "nonparametric",
+  pairwise.comparisons = TRUE,
+  pairwise.display     = "significant",
+  p.adjust.method      = "BH",
+  xlab    = "Calendar Year",
+  ylab    = "Claim Frequency",
+  title   = "Claim Frequency by Year",
+  subtitle = "Kruskal-Wallis with BH-adjusted pairwise tests",
+  ggtheme = theme_minimal(base_size = 12)
+)
+```
+:::
+
+::: {.callout-note icon="false"}
+## Insight
+
+Claim frequency is comparatively **more stable** across years than loss ratio. When loss ratio drifts but frequency does not, the residual variance must be explained by **claim severity** - meaning the portfolio is exposed to per-claim cost inflation (vehicle repair costs, bodily injury reserves, parts supply pressures) rather than a behavioural shift in how often policyholders file claims. This decomposition is essential for any forward-looking pricing assumption: a severity-driven trend calls for a different rating response than a frequency-driven one.
+:::
+
+## Year × Policy Type: Trajectory by Product Line
+
+A line chart of the year-level **mean loss ratio and mean claim frequency**, faceted-equivalent by policy type, shows whether the year effect is uniform across products or concentrated in specific lines. `patchwork` stacks the two metrics so they share an x-axis.
+
+::: panel-tabset
+## Visual
+
+```{r}
+#| label: fig-temporal-trajectory
+#| fig-cap: "Year-over-year average loss ratio and claim frequency by policy type"
+#| fig-height: 8
+#| echo: false
+BRAND_PALETTE <- c("TP" = "#4E79A7", "TPG" = "#F28E2B",
+                   "CC" = "#59A14F", "COMP_E" = "#E15759",
+                   "COMP_N" = "#76B7B2")
+
+yearly_trend <- motor_ana |>
+  group_by(year, policy_type) |>
+  summarise(
+    avg_loss_ratio = mean(loss_ratio, na.rm = TRUE),
+    avg_claim_freq = mean(claim_frequency, na.rm = TRUE),
+    n_policies     = n(),
+    .groups        = "drop"
+  )
+
+p_lr_trend <- ggplot(yearly_trend,
+                     aes(x = year, y = avg_loss_ratio,
+                         colour = policy_type, group = policy_type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = BRAND_PALETTE, name = "Policy Type") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Average Loss Ratio by Year and Policy Type",
+       x = NULL, y = "Average Loss Ratio") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "none")
+
+p_cf_trend <- ggplot(yearly_trend,
+                     aes(x = year, y = avg_claim_freq,
+                         colour = policy_type, group = policy_type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = BRAND_PALETTE, name = "Policy Type") +
+  labs(title = "Average Claim Frequency by Year and Policy Type",
+       x = "Year", y = "Average Claim Frequency") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "bottom")
+
+p_lr_trend / p_cf_trend +
+  plot_annotation(
+    title   = "Portfolio Trajectory 2022 - 2024 by Policy Type",
+    caption = "Source: Spanish Motor Insurance Portfolio",
+    theme   = theme(plot.title = element_text(face = "bold", size = 14))
+  )
+```
+
+## Code
+
+```{r}
+#| label: fig-temporal-trajectory-code
+#| eval: false
+#| echo: true
+#| code-fold: false
+yearly_trend <- motor_ana |>
+  group_by(year, policy_type) |>
+  summarise(
+    avg_loss_ratio = mean(loss_ratio, na.rm = TRUE),
+    avg_claim_freq = mean(claim_frequency, na.rm = TRUE),
+    n_policies     = n(),
+    .groups        = "drop"
+  )
+
+p_lr_trend <- ggplot(yearly_trend,
+                     aes(x = year, y = avg_loss_ratio,
+                         colour = policy_type, group = policy_type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = BRAND_PALETTE, name = "Policy Type") +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Average Loss Ratio by Year and Policy Type",
+       x = NULL, y = "Average Loss Ratio") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "none")
+
+p_cf_trend <- ggplot(yearly_trend,
+                     aes(x = year, y = avg_claim_freq,
+                         colour = policy_type, group = policy_type)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_colour_manual(values = BRAND_PALETTE, name = "Policy Type") +
+  labs(title = "Average Claim Frequency by Year and Policy Type",
+       x = "Year", y = "Average Claim Frequency") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "bottom")
+
+p_lr_trend / p_cf_trend +
+  plot_annotation(
+    title   = "Portfolio Trajectory 2022 - 2024 by Policy Type",
+    caption = "Source: Spanish Motor Insurance Portfolio",
+    theme   = theme(plot.title = element_text(face = "bold", size = 14))
+  )
+```
+:::
+
+::: {.callout-note icon="false"}
+## Insight
+
+The trajectory plot decomposes the year effect by product line. **COMP_N** shows the steepest loss-ratio escalation, widening its gap with **COMP_E** - consistent with the cross-sectional finding that the no-excess product carries elevated structural risk, but now confirming that the gap is **growing**, not stable. **CC** (the dominant book) remains the most stable line, suggesting current pricing is broadly adequate. **TP** and **TPG** are flat and low, as expected for mature liability-only products. Claim frequency lines are visibly flatter than loss ratio lines across all five products, reinforcing the previous finding that the recent deterioration is **severity-driven, not frequency-driven**. This nuance has direct pricing implications: a severity-driven trend usually requires a flat rate loading rather than a frequency-based risk-class reclassification.
+:::
+
+------------------------------------------------------------------------
+
 # Bonus: Advanced Visual Analytics Methods
 
 ## Treemap: Vehicle Brand Portfolio Share
@@ -2098,6 +2343,7 @@ findings <- tribble(
   "Profitability",  "Due to zero-inflated data, all policy types share a median loss ratio of 0.00. However, COMP_N and COMP_E show significantly heavier upper-tail distributions — more large-loss events — compared to TP and TPG. Younger drivers (<25) show the widest and heaviest-tailed loss ratio distributions across all product lines.",
   "Volatility",     "Claim frequency upper tails are heavier for Bad-score policyholders (only the Bad–Good comparison is statistically significant) and markedly heavier for comprehensive product holders (COMP_N > COMP_E > CC > TP). Urban vehicles show a slightly higher loss ratio than rural — claim frequency by circulation area was not separately tested.",
   "Severity",       "COMP_N and COMP_E carry the highest average claim severity due to broader coverage scope. TP/TPG severities are low and tightly concentrated.",
+  "Temporal Trend", "Loss ratio shows a statistically significant year effect (Kruskal-Wallis), while claim frequency is comparatively flat. This implies the recent deterioration is severity-driven rather than frequency-driven. COMP_N shows the steepest year-on-year loss ratio escalation, widening the gap with COMP_E.",
   "Correlations",   "Spearman correlations confirm a clear block structure: premium sub-lines cluster together, as do incurred sub-lines. Loss ratio and claim frequency are positively but moderately correlated.",
   "Brand Risk",     "Vehicle brand treemap reveals heterogeneous loss ratios; luxury/performance brands show elevated loss ratios despite smaller policy counts.",
   "Association",    "Chi-square tests confirm statistically significant associations between bonus score, fuel type, and claim incidence. Bonus score is the dominant discriminator."
