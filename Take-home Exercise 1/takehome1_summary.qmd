@@ -1,0 +1,712 @@
+---
+title: "Take-home Exercise 1: Motor Vehicle Insurance Portfolio Analysis"
+subtitle: "Executive Summary"
+author: "Trinh Minh Tam"
+date: "May 20, 2026"
+date-modified: "last-modified"
+format:
+  revealjs:
+    theme: white
+    slide-number: true
+    chalkboard: false
+    transition: slide
+    background-transition: fade
+    width: 1280
+    height: 720
+    margin: 0.05
+    footer: "Trinh Minh Tam | ISSS608 VAA | Take-home Exercise 1"
+    logo: ""
+    highlight-style: github
+    fig-align: center
+    embed-resources: true
+    fontsize: 22px
+    scrollable: false
+execute:
+  warning: false
+  message: false
+  echo: false
+  eval: true
+  cache: false
+---
+
+```{r setup}
+pacman::p_load(
+  tidyverse, ggridges, ggdist, ggstatsplot,
+  ggcorrplot, ggthemes, colorspace,
+  patchwork, ggrepel, scales, treemapify
+)
+
+motor <- read_delim(
+  "data/Dataset of motor insurance portfolio.csv",
+  delim = ";", show_col_types = FALSE
+) |>
+  mutate(
+    bonus_score       = factor(bonus_score,
+                               levels = c("B", "N", "G"),
+                               labels = c("Bad", "Neutral", "Good")),
+    policy_type       = factor(policy_type,
+                               levels = c("TP","TPG","CC","COMP_E","COMP_N")),
+    policy_status     = factor(policy_status,
+                               levels = c("A","C"),
+                               labels = c("Active","Cancelled")),
+    business_type     = factor(business_type,
+                               levels = c("NB","P"),
+                               labels = c("New Business","Portfolio")),
+    payment_frequency = factor(payment_frequency,
+                               levels = c("A","S","Q"),
+                               labels = c("Annual","Semiannual","Quarterly")),
+    fuel_type         = factor(fuel_type,
+                               levels = c("D","G"),
+                               labels = c("Diesel","Gasoline")),
+    municipality_type = factor(municipality_type,
+                               levels = c("I","C","IS"),
+                               labels = c("Inland","Coastal","Islands")),
+    circulation_area  = factor(circulation_area,
+                               levels = c("U","R"),
+                               labels = c("Urban","Rural")),
+    year              = factor(year),
+    loss_ratio        = if_else(total_premium > 0,
+                                total_incurred / total_premium, NA_real_),
+    claim_frequency   = if_else(total_exposure > 0,
+                                total_claims / total_exposure, NA_real_),
+    avg_severity      = if_else(total_claims > 0,
+                                total_incurred / total_claims, NA_real_),
+    has_claim         = factor(if_else(total_claims > 0, "Yes", "No"),
+                               levels = c("No","Yes")),
+    age_group         = cut(driver_age,
+                            breaks = c(17,25,35,45,55,65,90),
+                            labels = c("18-25","26-35","36-45",
+                                       "46-55","56-65","66+"),
+                            right = TRUE)
+  )
+
+motor_ana <- motor |>
+  filter(total_premium > 0, total_exposure > 0,
+         loss_ratio <= 50, !is.na(bonus_score), !is.na(fuel_type))
+
+set.seed(1234)
+motor_plot <- motor_ana |>
+  filter(loss_ratio <= 5) |>
+  slice_sample(n = 50000)
+
+BRAND_PALETTE <- c("TP"="#4E79A7","TPG"="#F28E2B","CC"="#59A14F",
+                   "COMP_E"="#E15759","COMP_N"="#76B7B2")
+```
+
+```{=html}
+<style>
+/* Reduce overall reveal font size */
+.reveal { font-size: 22px !important; line-height: 1.35; }
+/* Keep headings proportional */
+.reveal h2 { font-size: 1.4em; margin-bottom: 0.3em; }
+/* Compact tables */
+.reveal table { font-size: 0.88em; border-collapse: collapse; }
+.reveal table th, .reveal table td { padding: 4px 10px; }
+/* Ensure plots fill their column */
+.reveal .column img { width: 100% !important; height: auto !important; }
+/* Reduce callout box padding */
+.reveal div[style*="border-left"] { padding: 6px 10px !important; margin-top: 8px !important; }
+/* Tighten bullet spacing */
+.reveal ul li, .reveal ol li { margin-bottom: 0.2em; line-height: 1.3; }
+</style>
+```
+
+
+## Introduction {background-color="#2C3E50"}
+
+> "Leveraging visual analytics can potentially help investigate trends in underlying loss drivers, while data enrichment can help refine segmentation and underwriting strategy." — *Swiss Re, sigma 4/2019*
+
+**Objectives:**
+
+-   Explore distributions of **numerical** and **categorical** portfolio variables
+-   Statistically validate key factors driving **profitability** (loss ratio) and **volatility** (claim frequency)
+
+[📖 Full technical report →](takehome1_technical.html)
+
+::: notes
+This presentation summarises the visual analytics investigation of a real Spanish motor vehicle insurance portfolio. All analyses use non-parametric tests because the key metrics are heavily right-skewed and zero-inflated. For full methodology, code, and complete results, refer to the technical report.
+:::
+
+---
+
+## Dataset at a Glance {.smaller}
+
+::: columns
+::: {.column width="50%"}
+**Portfolio data**
+
+| | |
+|:--|:--|
+| **Source** | Mendeley Data — Spanish non-life insurer |
+| **Records** | 354,140 policy-year observations |
+| **Period** | 2022 – 2024 |
+| **Variables** | 47 raw + 5 derived KPIs |
+| **After filtering** | 352,165 (0.6% removed: LR > 50) |
+:::
+
+::: {.column width="50%"}
+**Three core actuarial KPIs**
+
+| KPI | Formula | Measures |
+|:--|:--|:--|
+| **Loss Ratio** | Incurred / Premium | Profitability |
+| **Claim Freq.** | Claims / Exposure | Volatility |
+| **Avg. Severity** | Incurred / Claims | Cost per claim |
+
+::: {style="background:#fff8e1; border-left:4px solid #F28E2B; padding:8px 12px; margin-top:14px; font-size:0.82em; border-radius:3px;"}
+⚠️ **Key context:** Loss ratio and claim frequency are **zero-inflated** — most policies have no claims, so all group medians equal 0.00. Risk differences appear in the **upper tail**, not the median.
+:::
+:::
+:::
+
+::: notes
+The dataset covers three calendar years. 1,975 records with LR > 50 were excluded as catastrophic outliers. Understanding zero-inflation is critical — it means we must use rank-based non-parametric tests and examine distributional tails rather than means or medians.
+:::
+
+[📖 Data wrangling →](takehome1_technical.html#data-wrangling)
+
+---
+
+## Portfolio Composition {.smaller}
+
+::: columns
+::: {.column width="65%"}
+```{r}
+#| fig-height: 3.7
+#| out-width: "100%"
+
+motor_ana |>
+  count(year, policy_type) |>
+  ggplot(aes(x = year, y = n, fill = policy_type)) +
+  geom_col(position = "dodge", colour = "white", linewidth = 0.3) +
+  geom_text(aes(label = comma(n)),
+            position = position_dodge(width = 0.9),
+            vjust = -0.4, size = 2.3) +
+  scale_y_continuous(labels = comma, expand = expansion(mult = c(0, 0.13))) +
+  scale_fill_manual(values = BRAND_PALETTE, name = "Policy Type") +
+  labs(title = "Policy Volume by Type and Year",
+       x = "Year", y = "Number of Policies",
+       caption = "Source: Spanish Motor Insurance Portfolio") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "bottom",
+        panel.grid.major.x = element_blank())
+```
+:::
+
+::: {.column width="35%"}
+::: {style="font-size:0.80em; padding-left:6px;"}
+**What the chart shows:**
+
+- **CC** (combined third-party) dominates, consistently accounting for over half of all policies across all three years
+- **COMP_E** is a distant second (~25%), confirming policyholders strongly prefer the excess variant over COMP_N
+- **COMP_N** is near-absent — the no-excess comprehensive product has negligible uptake
+- Portfolio volumes are broadly **stable 2022–2024** with a modest uptick in 2024
+
+::: {style="background:#e8f4f8; border-left:4px solid #4E79A7; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+💡 CC dominance means profitability and volatility are primarily driven by this product line, even though COMP_N/COMP_E carry higher individual risk.
+:::
+:::
+:::
+:::
+
+::: notes
+CC is the dominant product. COMP_N is near-absent, indicating strong market preference for the excess variant COMP_E. Portfolio volumes are stable across 2022–2024 with a modest increase in 2024.
+:::
+
+[📖 Full analysis →](takehome1_technical.html#policy-portfolio-composition)
+
+---
+
+## Portfolio Risk Profile {.smaller}
+
+::: columns
+::: {.column width="62%"}
+```{r}
+#| fig-height: 3.7
+#| out-width: "100%"
+
+plot_bar <- function(data, var, title_str, fill_color) {
+  data |>
+    count({{ var }}) |>
+    mutate(pct = n / sum(n)) |>
+    ggplot(aes(x = fct_reorder({{ var }}, n), y = n)) +
+    geom_col(fill = fill_color, colour = "white") +
+    geom_text(aes(label = percent(pct, accuracy = 0.1)),
+              hjust = -0.1, size = 3) +
+    coord_flip() +
+    scale_y_continuous(labels = comma, expand = expansion(mult = c(0, 0.22))) +
+    labs(title = title_str, x = NULL, y = "Count") +
+    theme_minimal(base_size = 10) +
+    theme(plot.title = element_text(face = "bold", size = 10),
+          panel.grid.major.y = element_blank())
+}
+
+p1 <- plot_bar(motor_ana, bonus_score,       "Bonus Score",   "#59A14F")
+p2 <- plot_bar(motor_ana, business_type,     "Business Type", "#F28E2B")
+p3 <- plot_bar(motor_ana, circulation_area,  "Circulation",   "#76B7B2")
+p4 <- plot_bar(motor_ana, municipality_type, "Municipality",  "#B07AA1")
+
+(p1 + p2) / (p3 + p4) +
+  plot_annotation(
+    title   = "Key Portfolio Segmentation Variables",
+    caption = "Source: Spanish Motor Insurance Portfolio",
+    theme   = theme(plot.title = element_text(face = "bold", size = 13))
+  )
+```
+:::
+
+::: {.column width="38%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**Key segmentation facts:**
+
+🟢 **Bonus Score:** 96.4% of policyholders are in the **Good** category — a very low-risk base with limited adverse selection exposure
+
+🟠 **Business Type:** **New Business dominates at 69.3%** vs Portfolio 30.7% — likely reflects first-year policy classification in this dataset
+
+🔵 **Circulation:** Urban (53.8%) > Rural (46.2%) — urban concentration brings higher collision and theft exposure
+
+🟣 **Municipality:** Inland (64.6%) accounts for the majority, consistent with Spain's population distribution
+
+::: {style="background:#f0faf0; border-left:4px solid #59A14F; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+💡 The 96.4% Good-score concentration is the portfolio's key structural advantage — it naturally suppresses overall claim frequency.
+:::
+:::
+:::
+:::
+
+::: notes
+96.4% Good bonus — very low adverse selection. New Business dominates at 69.3%. Urban and inland concentrations are consistent with Spanish fleet distribution.
+:::
+
+[📖 Full distributions →](takehome1_technical.html#key-categorical-variable-distributions)
+
+---
+
+## Loss Ratio: Why Medians Are Misleading Here {.smaller}
+
+::: columns
+::: {.column width="62%"}
+```{r}
+#| fig-height: 3.8
+#| out-width: "100%"
+
+motor_ana |>
+  filter(loss_ratio <= 5) |>
+  ggplot(aes(x = loss_ratio, y = fct_rev(policy_type),
+             fill = after_stat(x))) +
+  geom_density_ridges_gradient(
+    scale = 2.5, rel_min_height = 0.01,
+    quantile_lines = TRUE, quantiles = c(0.25, 0.5, 0.75)
+  ) +
+  scale_fill_viridis_c(name = "Loss Ratio", option = "C") +
+  scale_x_continuous(labels = percent_format(), limits = c(0, 5)) +
+  geom_vline(xintercept = 1, linetype = "dashed",
+             colour = "red", linewidth = 0.7) +
+  annotate("text", x = 1.05, y = 0.6, label = "Break-even",
+           colour = "red", size = 3, hjust = 0) +
+  labs(title    = "Loss Ratio Distribution by Policy Type",
+       subtitle = "Quantile lines at Q1, Q2, Q3 | Red dashed = break-even (LR = 1.0)",
+       x = "Loss Ratio", y = NULL,
+       caption = "Source: Spanish Motor Insurance Portfolio") +
+  theme_ridges(grid = FALSE, center_axis_labels = TRUE) +
+  theme(legend.position = "none",
+        plot.title = element_text(face = "bold", size = 12))
+```
+:::
+
+::: {.column width="38%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**Reading this chart:**
+
+- All five Q2 (median) lines sit at **0.00** — the majority of policies never generate a claim, so the midpoint is always zero
+- Risk differences live in the **upper tail** (rightward spread and the warm/yellow region)
+- **COMP_N** has the widest, flattest distribution — meaningful mass stretches **past the break-even line**, indicating real profitability risk
+- **TP** is almost entirely a sharp spike at 0 — virtually all TP policies are cost-free to the insurer
+
+::: {style="background:#fff3e0; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+⚠️ All subsequent statistical tests detect **tail differences**, not median differences. This is by design, not a limitation.
+:::
+:::
+:::
+:::
+
+::: notes
+Zero-inflation means all medians are 0.00. The ridgeline exposes what box plots hide — the distributional shape. COMP_N has a heavier tail past break-even. This slide sets up the interpretation framework for all ggbetweenstats slides that follow.
+:::
+
+[📖 Full ridgeline analysis →](takehome1_technical.html#loss-ratio-distribution-ridgeline-plot)
+
+---
+
+## Profitability Driver 1: Bonus Score {.smaller}
+
+::: columns
+::: {.column width="62%"}
+```{r}
+#| fig-height: 3.9
+#| out-width: "100%"
+
+ggbetweenstats(
+  data    = motor_plot,
+  x       = bonus_score,
+  y       = loss_ratio,
+  type    = "nonparametric",
+  pairwise.comparisons = TRUE,
+  pairwise.display     = "significant",
+  p.adjust.method      = "BH",
+  xlab    = "Bonus Score",
+  ylab    = "Loss Ratio",
+  title   = "Loss Ratio by Bonus Score",
+  subtitle = "Kruskal-Wallis; BH-adjusted pairwise tests shown where p < 0.05",
+  ggtheme = theme_minimal(base_size = 11)
+)
+```
+:::
+
+::: {.column width="38%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**Statistical findings:**
+
+- **All 3 pairwise comparisons** are significant after BH correction — including **Good vs Neutral** (p ≈ 0.00002), showing fine-grained discrimination at every level
+- All **medians = 0.00** (zero-inflated); the test detects **rank distribution differences** in the upper tail
+- **Bad-score** policyholders generate a visibly heavier scatter of high-LR observations — they disproportionately drive the portfolio's large, unprofitable claims
+- **Effect size** is small but consistent, confirming this is a real signal, not noise
+
+::: {style="background:#fce4ec; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+💡 **Bonus score is the single strongest profitability predictor** in this portfolio — it discriminates risk meaningfully at every tier, not just at the extremes.
+:::
+:::
+:::
+:::
+
+::: notes
+All three pairwise comparisons significant after BH correction. Medians all 0.00 — test detects tail differences. Bad segment drives the portfolio's unprofitable large claims. Strongest single profitability predictor.
+:::
+
+[📖 Full analysis →](takehome1_technical.html#effect-of-bonus-score-on-loss-ratio)
+
+---
+
+## Profitability Driver 2: Policy Type {.smaller}
+
+::: columns
+::: {.column width="62%"}
+```{r}
+#| fig-height: 3.9
+#| out-width: "100%"
+
+ggbetweenstats(
+  data    = motor_plot,
+  x       = policy_type,
+  y       = loss_ratio,
+  type    = "nonparametric",
+  pairwise.comparisons = TRUE,
+  pairwise.display     = "significant",
+  p.adjust.method      = "BH",
+  xlab    = "Policy Type",
+  ylab    = "Loss Ratio",
+  title   = "Loss Ratio by Policy Type",
+  subtitle = "Kruskal-Wallis; BH-adjusted pairwise tests shown where p < 0.05",
+  ggtheme = theme_minimal(base_size = 11)
+)
+```
+:::
+
+::: {.column width="38%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**What the tests confirm:**
+
+- All **medians = 0.00** across all five types — but rank distributions differ significantly (p ≈ 0 across pairwise tests)
+- **COMP_N** has the **heaviest upper tail** — no deductible removes the financial barrier to small claims, compounding over time
+- **COMP_E vs COMP_N**: the deductible in COMP_E acts as a meaningful brake — COMP_E shows a significantly lower risk distribution
+- **TP and TPG** are the most profitable lines — their narrow liability-only scope rarely generates large incurred costs
+
+::: {style="background:#fce4ec; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+💡 **COMP_N warrants a pricing adequacy review** — its no-excess structure drives disproportionate tail risk relative to COMP_E.
+:::
+:::
+:::
+:::
+
+::: notes
+All medians 0.00. COMP_N has heaviest tail. Deductible in COMP_E is a meaningful risk brake. TP/TPG most profitable. Supports differential pricing between COMP_E and COMP_N.
+:::
+
+[📖 Full analysis →](takehome1_technical.html#effect-of-policy-type-on-loss-ratio)
+
+---
+
+## Profitability Driver 3: Driver Age {.smaller}
+
+::: columns
+::: {.column width="63%"}
+```{r}
+#| fig-height: 3.7
+#| out-width: "100%"
+
+set.seed(1234)
+motor_scatter <- motor_ana |>
+  filter(loss_ratio <= 5, !is.na(driver_age)) |>
+  slice_sample(n = 20000)
+
+ggscatterstats(
+  data     = motor_scatter,
+  x        = driver_age,
+  y        = loss_ratio,
+  type     = "nonparametric",
+  marginal = TRUE,
+  xlab     = "Driver Age (years)",
+  ylab     = "Loss Ratio",
+  title    = "Driver Age vs Loss Ratio",
+  subtitle = "Spearman correlation; n = 20,000 sample",
+  ggtheme  = theme_minimal(base_size = 11)
+)
+```
+:::
+
+::: {.column width="37%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**What the chart reveals:**
+
+- **Negative Spearman correlation** — statistically significant; older drivers tend to generate lower loss ratios
+- Drivers **under 30** show a visible cluster of elevated loss ratios in the upper portion of the scatter
+- **Marginal histograms** confirm: loss ratio is right-skewed and zero-inflated (top margin), while driver age is roughly bell-shaped around ~48–49 years (right margin)
+- Spearman rank correlation is the right choice here — neither variable is normally distributed
+
+::: {style="background:#e8f4f8; border-left:4px solid #4E79A7; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+💡 Age is a **secondary pricing factor** — real and significant, but smaller in magnitude than bonus score or policy type.
+:::
+:::
+:::
+:::
+
+::: notes
+Negative Spearman correlation confirmed. Under-30 concentration of elevated LR. Marginal histograms show zero-inflation and bell-shaped age distribution. Age is a secondary but significant factor.
+:::
+
+[📖 Full analysis →](takehome1_technical.html#relationship-driver-age-vs-loss-ratio)
+
+---
+
+## Volatility: Claim Frequency by Policy Type {.smaller}
+
+::: columns
+::: {.column width="62%"}
+```{r}
+#| fig-height: 3.9
+#| out-width: "100%"
+
+set.seed(1234)
+motor_freq_plot <- motor_ana |>
+  filter(claim_frequency <= 3, !is.na(bonus_score)) |>
+  slice_sample(n = 50000)
+
+ggbetweenstats(
+  data    = motor_freq_plot,
+  x       = policy_type,
+  y       = claim_frequency,
+  type    = "nonparametric",
+  pairwise.comparisons = TRUE,
+  pairwise.display     = "significant",
+  p.adjust.method      = "BH",
+  xlab    = "Policy Type",
+  ylab    = "Claim Frequency",
+  title   = "Claim Frequency by Policy Type",
+  subtitle = "Kruskal-Wallis (χ² = 570.91, p ≈ 0); BH-adjusted pairwise tests",
+  ggtheme = theme_minimal(base_size = 11)
+)
+```
+:::
+
+::: {.column width="38%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**What the tests show:**
+
+- All **medians = 0.00** — but rank distributions confirm a clear ordering: **COMP_N > COMP_E > CC > TP** (all pairwise differences significant, p ≈ 0)
+- **COMP_N > COMP_E**: absence of excess removes the financial incentive to avoid minor claims — even small glass or scratch events get reported
+- The compounding effect is critical: comprehensive products generate **both** higher frequency **and** higher severity, explaining their elevated loss ratios
+- For **bonus score** and frequency, only the **Bad–Good** comparison is significant — a weaker effect than on loss ratio
+
+::: {style="background:#fce4ec; border-left:4px solid #E15759; padding:8px 10px; margin-top:10px; border-radius:3px;"}
+💡 Frequency and severity compound for COMP_N — **both** dimensions must be addressed in any pricing review.
+:::
+:::
+:::
+:::
+
+::: notes
+All medians 0.00. COMP_N > COMP_E > CC > TP ordering confirmed. No-excess removes claim barrier. Compounding frequency + severity effect for comprehensive products.
+:::
+
+[📖 Full volatility analysis →](takehome1_technical.html#volatility-analysis-claim-frequency)
+
+---
+
+## Claim Incidence: Bonus Score & Fuel Type {.smaller}
+
+::: columns
+::: {.column width="62%"}
+```{r}
+#| fig-height: 3.8
+#| out-width: "100%"
+
+p_bonus_bar <- ggbarstats(
+  data    = motor_ana,
+  x       = has_claim,
+  y       = bonus_score,
+  label   = "both",
+  xlab    = "Has Claim",
+  title   = "By Bonus Score",
+  subtitle = "Bad: 22% vs Good: 14%",
+  ggtheme = theme_minimal(base_size = 10)
+)
+
+p_fuel_bar <- ggbarstats(
+  data    = motor_ana,
+  x       = has_claim,
+  y       = fuel_type,
+  label   = "both",
+  xlab    = "Has Claim",
+  title   = "By Fuel Type",
+  subtitle = "Diesel: 15% vs Gasoline: 12%",
+  ggtheme = theme_minimal(base_size = 10)
+)
+
+p_bonus_bar + p_fuel_bar
+```
+:::
+
+::: {.column width="38%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**Bonus score vs claim incidence:**
+
+- **Bad: 22%** vs **Good: 14%** claim rate — a **1.6× difference**, highly significant (χ² = 299.76, p ≈ 0)
+- Unlike `ggbetweenstats`, `ggbarstats` measures **binary incidence** (did any claim occur?), so zero-inflation is not a concern here
+- Good segment's 96.4% dominance keeps the **overall portfolio incidence rate low**
+
+**Fuel type vs claim incidence:**
+
+- **Diesel: 15%** vs **Gasoline: 12%** — statistically significant (χ² = 833.11, p ≈ 0) but largely a **coverage mix effect**
+- Diesel vehicles carry more COMP_E/COMP_N policies, which have more claimable event types (glass, theft, own damage)
+
+::: {style="background:#f0faf0; border-left:4px solid #59A14F; padding:8px 10px; margin-top:8px; border-radius:3px;"}
+💡 Fuel type is a **proxy** for vehicle profile, not a direct risk driver. It loses significance once policy type is controlled for.
+:::
+:::
+:::
+:::
+
+::: notes
+Binary incidence proportions — not affected by zero-inflation. Bad 22% vs Good 14% is 1.6× difference. Diesel 15% vs gasoline 12% is driven by coverage mix, not fuel type per se.
+:::
+
+[📖 Full association analysis →](takehome1_technical.html#claim-incidence-by-fuel-type-association-test)
+
+---
+
+## Vehicle Brand Risk Landscape {.smaller}
+
+::: columns
+::: {.column width="63%"}
+```{r}
+#| fig-height: 3.9
+#| out-width: "100%"
+
+brand_summary <- motor_ana |>
+  filter(!is.na(vehicle_brand), loss_ratio <= 5) |>
+  group_by(vehicle_brand) |>
+  summarise(n_policies = n(),
+            avg_lr     = mean(loss_ratio, na.rm = TRUE),
+            .groups    = "drop") |>
+  filter(n_policies >= 200)
+
+ggplot(brand_summary,
+       aes(area  = n_policies, fill = avg_lr,
+           label = paste0(vehicle_brand, "\n",
+                          comma(n_policies), "\nLR: ", round(avg_lr, 2)))) +
+  geom_treemap(colour = "white", linewidth = 0.8) +
+  geom_treemap_text(colour = "white", place = "centre", size = 8,
+                    fontface = "bold", grow = FALSE, reflow = TRUE) +
+  scale_fill_gradient2(low = "#1A9850", mid = "#FFFFBF", high = "#D73027",
+                       midpoint = 0.5, name = "Avg. Loss Ratio",
+                       guide = guide_colourbar(direction = "horizontal",
+                                               title.position = "top")) +
+  labs(title    = "Vehicle Brand: Policy Count & Average Loss Ratio",
+       subtitle = "Tile size ∝ policy count | Green = low LR | Red = high LR",
+       caption  = "Source: Spanish Motor Insurance Portfolio") +
+  theme(plot.title    = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(size = 9),
+        legend.position = "bottom")
+```
+:::
+
+::: {.column width="37%"}
+::: {style="font-size:0.79em; padding-left:6px;"}
+**How to read this chart:**
+
+- **Tile size** = number of policies (concentration risk)
+- **Tile colour** = average loss ratio (green = profitable, red = loss-making)
+- **Best case:** Large tile + green = high volume and profitable
+- **Concern:** Small tile + red = low volume but elevated loss ratio
+
+**Key observations:**
+
+- Mass-market brands (largest tiles) dominate the portfolio — they carry the most volume risk
+- Several **smaller, redder tiles** represent luxury or performance brands with elevated average loss ratios driven by high per-claim repair costs
+- Some **mid-volume brands** show surprisingly high LRs, suggesting possible under-pricing in those segments
+
+::: {style="background:#e8f4f8; border-left:4px solid #4E79A7; padding:8px 10px; margin-top:8px; border-radius:3px;"}
+💡 This view enables **brand-level underwriting decisions** — something a standard bar chart cannot show.
+:::
+:::
+:::
+:::
+
+::: notes
+Treemap communicates two dimensions simultaneously: concentration (tile size) and profitability (colour). Mass-market brands dominate. Smaller red tiles are luxury/performance brands with elevated LR. Enables brand-level underwriting decisions.
+:::
+
+[📖 Full treemap analysis →](takehome1_technical.html#treemap-vehicle-brand-portfolio-share)
+
+---
+
+## Key Findings & Implications {.smaller}
+
+::: columns
+::: {.column width="50%"}
+**Profitability (Loss Ratio)**
+
+- 🔴 **Bonus score** → strongest predictor; all three tiers significantly different
+- 🔴 **COMP_N / COMP_E** → heaviest upper-tail distributions *(all medians = 0.00)*
+- 🟡 **Young drivers** (<25) → broadest, most right-tailed distributions
+- 🟡 **Urban circulation** → statistically higher loss ratio than rural
+- 🟢 **TP / TPG** → tightest, lowest-risk distributions
+
+**Claim Incidence**
+
+- Bad bonus: **22%** vs Good: **14%** — 1.6× difference
+- Diesel: **15%** vs Gasoline: **12%** — coverage mix effect
+:::
+
+::: {.column width="50%"}
+**Volatility (Claim Frequency)**
+
+- 🔴 **COMP_N > COMP_E > CC > TP** — frequency tail mirrors loss ratio ordering
+- 🔴 Compounding effect: comprehensive drives **both** higher frequency **and** higher severity
+- 🟡 **Bad–Good** bonus comparison is significant (weaker than LR effect)
+- 🟢 Good bonus (96.4% of portfolio) → natural frequency protection
+
+::: {style="background:#fff3e0; border-left:4px solid #F28E2B; padding:10px 14px; margin-top:12px; border-radius:3px; font-size:0.88em;"}
+**Strategic implication:**
+
+Pricing models should prioritise **bonus score** and **policy type** as primary factors, with **driver age** and **circulation area** providing incremental lift. **COMP_N** specifically warrants a pricing adequacy review given its compounding frequency + severity risk profile.
+:::
+:::
+:::
+
+::: notes
+Bonus score and policy type are dominant. COMP_N carries compounding risk. Driver age and circulation area are secondary. Good-score concentration is the portfolio's key structural advantage.
+:::
+
+[📖 Full summary →](takehome1_technical.html#summary-of-key-findings)
