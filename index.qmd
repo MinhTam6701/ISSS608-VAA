@@ -440,7 +440,7 @@ format:
 ══════════════════════ -->
 <div class="stats-row">
   <div class="stat-card">
-    <div class="stat-number">13</div>
+    <div class="stat-number">15</div>
     <div class="stat-label">Hands-on Exercises</div>
   </div>
   <div class="stat-card">
