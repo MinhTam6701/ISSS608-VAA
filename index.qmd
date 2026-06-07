@@ -574,6 +574,26 @@ format:
           <a class="ex-link" href="Hands on Exercises 5/hands-on5-5.html">Text &amp; Horizon Visualisation</a>
           <span class="ex-chapter">Ch 16</span>
         </li>
+        <li>
+          <div class="ex-badge">14</div>
+          <a class="ex-link" href="Hands on Exercises 7/hands-on7-1.html">Visualising Models &amp; Regression</a>
+          <span class="ex-chapter">Ch 27</span>
+        </li>
+        <li>
+          <div class="ex-badge">15</div>
+          <a class="ex-link" href="Hands on Exercises 7/hands-on7-2.html">Visualising High-Dimensional Data</a>
+          <span class="ex-chapter">Ch 29</span>
+        </li>
+        <!-- ─── ADD NEW HANDS-ON EXERCISES HERE ──────────────────────────────────
+             Pattern: increment badge number, update href folder/file & chapter.
+             Example next entry:
+             <li>
+               <div class="ex-badge">16</div>
+               <a class="ex-link" href="Hands on Exercises 8/hands-on8-1.html">Title Here</a>
+               <span class="ex-chapter">Ch XX</span>
+             </li>
+             Also update the stat-number in the stats row above (currently 15).
+        ──────────────────────────────────────────────────────────────────────── -->
       </ul>
     </div>
   </div>
@@ -596,18 +616,23 @@ format:
         </div>
       </div>
 
-      <!-- Placeholder for future exercises -->
-      <div class="takehome-card" style="opacity:.55; pointer-events:none;">
+      <div class="takehome-card">
         <div class="card-eyebrow">Take-home Exercise 2</div>
-        <div class="card-title">Coming Soon</div>
-        <div class="card-desc">Stay tuned — the next take-home exercise will be published here.</div>
+        <div class="card-title">VAST Challenge 2026 — Mini-Challenge 2</div>
+        <div class="card-desc">
+          Investigating complex, multi-source data from the VAST Challenge 2026 using
+          advanced visual analytics techniques to uncover patterns and support analytical reasoning.
+        </div>
+        <div class="card-links">
+          <a class="card-btn filled" href="Take-home Exercise 2/takehome2.html">View Report</a>
+        </div>
       </div>
 
-      <div class="takehome-card" style="opacity:.55; pointer-events:none;">
-        <div class="card-eyebrow">Take-home Exercise 3</div>
-        <div class="card-title">Coming Soon</div>
-        <div class="card-desc">Stay tuned — the next take-home exercise will be published here.</div>
-      </div>
+      <!-- ─── ADD FUTURE TAKE-HOME EXERCISES HERE ───────────────────────────────
+           Copy the block above, update the eyebrow (Exercise N), title, desc,
+           and href to match your new submission folder/file. Remove this comment
+           block when you add the next exercise.
+      ──────────────────────────────────────────────────────────────────────── -->
 
     </div>
   </div>
