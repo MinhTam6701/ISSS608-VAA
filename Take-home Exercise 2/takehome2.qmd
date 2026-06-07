@@ -1,0 +1,800 @@
+---
+title: "Take-home Exercise 2 — VAST Challenge 2026 Mini-Challenge 2"
+subtitle: "Tracing an anomalous *SaidIt* post through TenantThread's multi-agent system"
+author: "Trinh Minh Tam"
+date: "Jun 2, 2026"
+date-modified: "last-modified"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    code-summary: "Show the code"
+    code-tools: true
+    fig-align: center
+    fig-width: 9
+    fig-height: 6
+execute:
+  warning: false
+  message: false
+  freeze: auto
+  cache: true
+editor: visual
+---
+
+# Overview
+
+> **Background.** *"You work in the AI systems administration department of Company A. A post was recently made on SaidIt that looks like a malfunction of an agent: it is in gibberish and in a forum that appears random. Your job is to track down why this post occurred and suggest a remedy."* — [VAST Challenge 2026, MC2](https://vast-challenge.github.io/2026/MC2.html)
+
+The post in question was sent to *SaidIt* by John Windward on 17 May 2046 at 04:21 company-local time (UTC-7). TenantThread's agentic system is large and undocumented, so nobody has a clear map of which interactions actually happen. I work through it the way most visual-analytics investigations do:
+
+1.  Map the activity and build a picture of what normal behaviour looks like.
+2.  Compare that baseline against the specific behaviour I care about (the strange post).
+3.  Recommend one intervention, backed by the data, that would stop it happening again.
+
+Every figure below is generated from the raw data, and the three MC2 questions are answered in order.
+
+## The data
+
+| File | Contents | Used for |
+|------------------------|------------------------|------------------------|
+| `MC2 data.json` | A timeline of 185,147 events (`short_name`, `parties`, `when`, `details`, `id`) covering actions by people, agents and office systems. | Behaviour, propagation, timeline |
+| `org_chart.json` | TenantThread's org chart (company → departments → teams → people), compatible with `networkx`'s `node_link_graph`. | System context, roles |
+
+## Methodology
+
+I use the **tidyverse** for import and wrangling. The `details` field does not have a fixed schema (its keys depend on `short_name`), so I read the JSON as a **nested list** and pull the fields I need with `purrr`. Networks are built with `tidygraph`/`igraph` and drawn with `ggraph`, hover tooltips come from `ggiraph`, timelines and bar charts use `ggplot2` and `patchwork`, and `ggtext` handles the styled plot titles.
+
+*The story the figures end up telling is this*: a prompt-injection worm got in through an IT Helpdesk agent and spread agent-to-agent through the task queue, by ordering other agents to read an untrusted instructions file. Several compromised agents, including John Windward's, then posted attacker-supplied files to *SaidIt*. The 17 May post is the third and most recent time this happened.
+
+# Setup
+
+## Loading packages
+
+```{r}
+#| label: setup
+pacman::p_load(tidyverse, jsonlite, lubridate, ggtext, patchwork, scales, knitr, tidygraph, igraph, ggraph, ggiraph)
+```
+
+## Defining common variables {#sec-common}
+
+I keep the styling in one place: a palette, a department colour key, a shared theme, and a fixed seed so the network layouts come out the same on every render.
+
+```{r}
+#| label: common-vars
+STYLES <- list(
+  ink = "#1d2433",
+  muted = "#6b7280",
+  accent = "#c0392b",
+  accent2 = "#2980b9",
+  ok = "#27ae60",
+  payload = "#8e44ad",
+  grid = "#e7e9ee",
+  font = "sans"
+)
+
+# company runs on UTC-7
+LOCAL_TZ <- "Etc/GMT+7"
+
+DEPT_PAL <- c(
+  "Executive Suite" = "#c0392b",
+  "Information Technologies" = "#2980b9",
+  "Products" = "#27ae60",
+  "Customer Support" = "#e67e22",
+  "Human Resources" = "#8e44ad",
+  "Legal" = "#16a085",
+  "Unknown" = "#95a5a6"
+)
+
+CONFIG <- list(seed = 4231)
+
+theme_va <- function(base = 12) {
+  theme_minimal(base_size = base, base_family = STYLES$font) +
+    theme(
+      plot.title = element_markdown(face = "bold", colour = STYLES$ink, size = base + 3),
+      plot.subtitle = element_markdown(colour = STYLES$muted, size = base - 1, lineheight = 1.2),
+      plot.caption = element_markdown(colour = STYLES$muted, size = base - 4, hjust = 0),
+      axis.title = element_text(colour = STYLES$muted, size = base - 2),
+      axis.text = element_text(colour = STYLES$ink, size = base - 3),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(colour = STYLES$grid, linewidth = .4),
+      legend.title = element_text(face = "bold", size = base - 2),
+      legend.text = element_text(size = base - 3),
+      legend.position = "bottom"
+    )
+}
+theme_set(theme_va())
+```
+
+## Loading data
+
+I read the events file once with `simplifyVector = FALSE` so the uneven `details` objects stay intact, then flatten them with `purrr`. The `freeze`/`cache` settings in the YAML mean this slow step only re-runs when the source file changes.
+
+```{r}
+#| label: load-raw
+mc2_raw <- fromJSON("data/MC2 data.json", simplifyVector = FALSE)
+org_raw <- fromJSON("data/org_chart.json", simplifyVector = TRUE)
+
+events_list <- mc2_raw$events
+length(events_list)
+```
+
+# Data wrangling
+
+## Flattening the event log
+
+Because `details` holds different keys for different actions, reading everything into one flat table would give hundreds of mostly-empty columns. Instead I pull the handful of fields I actually use, one at a time, with type-stable accessors. `pick_chr()` is a small helper that **returns `NA`** instead of erroring when a key is missing.
+
+```{r}
+#| label: flatten-events
+clean_id <- function(x) {
+  x |>
+    str_remove("^Agent/") |>
+    str_remove("^(person|system|world|team|department|company):")
+}
+
+pick_chr <- function(lst, ...) {
+  map_chr(lst, function(e) {
+    v <- pluck(e, ...)
+    if (is.null(v) || length(v) == 0) NA_character_ else as.character(v)[1]
+  })
+}
+
+events <- tibble(ev = events_list) |>
+  mutate(
+    id = map_int(ev, ~ as.integer(pluck(.x, "id", .default = NA))),
+    short_name = pick_chr(ev, "short_name"),
+    when = map_dbl(ev, ~ as.numeric(pluck(.x, "when", .default = NA_real_))),
+    parties = map(ev, ~ as.character(unlist(pluck(.x, "parties", .default = list())))),
+    actor_raw = map_chr(ev, ~ {
+      p <- as.character(unlist(pluck(.x, "parties", .default = list())))
+      if (length(p) == 0) NA_character_ else p[1]
+    }),
+    d_task = pick_chr(ev, "details", "task"),
+    d_target = map_chr(ev, ~ {
+      v <- pluck(.x, "details", "target_agent", .default = pluck(.x, "details", "target", .default = NA))
+      if (is.null(v) || length(v) == 0) NA_character_ else as.character(v)[1]
+    }),
+    d_path = map_chr(ev, ~ {
+      v <- pluck(.x, "details", "args", "path", .default = pluck(.x, "details", "target", .default = NA))
+      if (is.null(v) || length(v) == 0) NA_character_ else as.character(v)[1]
+    }),
+    d_content = pick_chr(ev, "details", "content"),
+    d_csource = pick_chr(ev, "details", "content_source"),
+    d_forum = pick_chr(ev, "details", "forum"),
+    d_virus = map_lgl(ev, ~ isTRUE(pluck(.x, "details", "virus", .default = FALSE))),
+    d_combo = map_chr(ev, ~ {
+      v <- pluck(.x, "details", "combo", .default = NULL)
+      if (is.null(v) || length(v) == 0) NA_character_ else paste(unlist(v), collapse = " + ")
+    })
+  ) |>
+  select(-ev) |>
+  mutate(
+    actor = clean_id(actor_raw),
+    is_agent = str_starts(coalesce(actor_raw, ""), "Agent/"),
+    timestamp = as_datetime(when, tz = "UTC"),
+    local_time = with_tz(timestamp, LOCAL_TZ),
+    date = as_date(local_time),
+    hour = floor_date(local_time, "hour")
+  )
+
+glimpse(events |> select(id, short_name, actor, is_agent, local_time,
+                         d_task, d_path, d_csource, d_forum, d_virus, d_combo))
+```
+
+A quick sanity check: the timeline should sit inside May–July 2046.
+
+```{r}
+#| label: time-range
+events |>
+  summarise(first = min(local_time), last = max(local_time), n = n()) |>
+  kable(caption = "Event log coverage (company-local, UTC-7)")
+```
+
+## Building the organisation lookup
+
+The org chart is a tree of `contains` edges (*company → department → team → person*), plus five `led_by` edges for people who run a department. For each person I work out their team, department and title.
+
+```{r}
+#| label: org-wrangle
+org_nodes <- as_tibble(org_raw$nodes)
+org_edges <- as_tibble(org_raw$edges)
+if (!"title" %in% names(org_nodes)) org_nodes$title <- NA_character_
+
+node_label <- set_names(org_nodes$label, org_nodes$id)
+node_type <- set_names(org_nodes$type, org_nodes$id)
+
+parent_tbl <- org_edges |>
+  filter(relation == "contains") |>
+  select(child = target, parent = source)
+parent <- set_names(parent_tbl$parent, parent_tbl$child)
+
+walk_to_type <- function(node, target_type) {
+  cur <- node
+  while (!is.na(cur) && cur %in% names(parent)) {
+    cur <- parent[[cur]]
+    if (!is.na(cur) && node_type[[cur]] == target_type) return(node_label[[cur]])
+  }
+  NA_character_
+}
+
+dept_leads <- org_edges |>
+  filter(relation == "led_by") |>
+  transmute(person = target, leads_dept = node_label[source])
+
+person_lookup <- org_nodes |>
+  filter(type == "person") |>
+  transmute(
+    actor = clean_id(id),
+    full_name = label,
+    title = coalesce(title, "Staff"),
+    team = map_chr(id, walk_to_type, target_type = "team"),
+    department = map_chr(id, walk_to_type, target_type = "department")
+  ) |>
+  left_join(dept_leads |> mutate(actor = clean_id(person)), by = "actor") |>
+  mutate(department = coalesce(department, leads_dept, "Unknown"),
+         team = coalesce(team, if_else(!is.na(leads_dept), paste0(leads_dept, " (lead)"), "—"))) |>
+  select(actor, full_name, title, team, department)
+
+person_lookup |>
+  filter(actor %in% c("gabriel_sonar", "john_windward", "emma_harbor",
+                      "noah_mariner", "liam_anchor", "chloe_ballast")) |>
+  kable(caption = "Key actors and their roles in TenantThread")
+```
+
+## Tagging the event log with behaviour classes
+
+Two flags do most of the work in this analysis:
+
+-   `is_anom_post` — a *SaidIt/FleX* post whose body comes from a `content_source` file instead of a normal typed `content` string. These are the gibberish posts.
+-   `is_propagation` — a `queue_subordinate_task` that tells another agent to `read_file` an `*_further_instructions.md` file. This is how the worm copies itself.
+
+```{r}
+#| label: tag-events
+post_types <- c("saidit_post", "post_saidit", "flex_post", "post_flex")
+
+events <- events |>
+  mutate(
+    platform = case_when(str_detect(short_name, "saidit") ~ "SaidIt",
+                         str_detect(short_name, "flex") ~ "FleX",
+                         TRUE ~ NA_character_),
+    is_post = short_name %in% post_types,
+    is_anom_post = is_post & !is.na(d_csource),
+    is_propagation = short_name == "queue_subordinate_task" &
+                     d_task == "read_file" &
+                     str_detect(coalesce(d_path, ""), "_further_instructions\\.md$"),
+    campaign = case_when(
+      str_detect(coalesce(d_csource, d_path, d_content, ""), "HiddenOrca") ~ "HiddenOrca",
+      str_detect(coalesce(d_csource, d_path, d_content, ""), "MellowOtter") ~ "MellowOtter",
+      str_detect(coalesce(d_csource, d_path, d_content, ""), "SwiftWren") ~ "SwiftWren",
+      TRUE ~ NA_character_)
+  )
+
+events |>
+  summarise(
+    anomalous_posts = sum(is_anom_post),
+    propagation_edges = sum(is_propagation),
+    virus_checkins = sum(short_name == "check_in" & d_virus, na.rm = TRUE)
+  ) |>
+  kable(caption = "Three signals that drive the analysis")
+```
+
+::: callout-note
+## Wrangling outcome
+
+Three numbers set up everything that follows: **3** anomalous (file-sourced) posts, **235** worm-replication tasks, and **15,051** "virus" check-ins. With the data tidied, I can build the baseline before zooming in on the 17 May post.
+:::
+
+# System baseline (overview) {#sec-baseline}
+
+Before calling anything anomalous, I need a sense of what is **normal**. This section covers the context part of Task 1 (sub-question 1.2) and gets reused later.
+
+## What actions exist, and how often?
+
+```{r}
+#| label: fig-action-mix
+#| fig-cap: "The actions the system performs. Routine machine traffic (email checks, task assignment, file I/O) makes up almost everything; External posts are rare."
+events |>
+  count(short_name, sort = TRUE) |>
+  mutate(short_name = fct_reorder(short_name, n),
+         family = case_when(
+           short_name %in% post_types | str_detect(short_name, "saidit|flex") ~ "External posting",
+           str_detect(short_name, "email|sent|received") ~ "Communication",
+           str_detect(short_name, "file") ~ "File I/O",
+           str_detect(short_name, "task|agent|advice|contact|meeting|check_in") ~ "Agent orchestration",
+           TRUE ~ "Other")) |>
+  ggplot(aes(n, short_name, fill = family)) +
+  geom_col(width = .72) +
+  geom_text(aes(label = comma(n)), hjust = -0.1, size = 3, colour = STYLES$ink) +
+  scale_x_continuous(labels = comma, expand = expansion(mult = c(0, .18))) +
+  scale_fill_brewer(palette = "Set2", name = NULL) +
+  labs(title = "TenantThread's automated action mix",
+       subtitle = "185,147 events across 23 action types. <span style='color:#c0392b'>**External posting**</span> is the smallest group.",
+       x = "Number of events", y = NULL,
+       caption = "Source: MC2 data.json")
+```
+
+## When is the system active?
+
+```{r}
+#| label: fig-activity-timeline
+#| fig-cap: "Events per day. There is a clear spike in the second week of May 2046, which is when the worm was replicating."
+daily <- events |>
+  mutate(grp = if_else(is_propagation | d_virus, "Worm activity", "Normal operations")) |>
+  count(date, grp)
+
+ggplot(daily, aes(date, n, fill = grp)) +
+  geom_col(width = .9) +
+  annotate("rect", xmin = as_date("2046-05-08"), xmax = as_date("2046-05-13"),
+           ymin = 0, ymax = Inf, alpha = .06, fill = STYLES$accent) +
+  annotate("text", x = as_date("2046-05-10"), y = Inf, vjust = 1.4,
+           label = "Outbreak window", colour = STYLES$accent, size = 3.2, fontface = "bold") +
+  scale_fill_manual(values = c("Normal operations" = "#b9c2cf",
+                               "Worm activity" = STYLES$accent), name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "System activity over time",
+       subtitle = "The 8–12 May burst is mostly worm replication and 'virus' check-ins",
+       x = NULL, y = "Events per day")
+```
+
+## The organisation we are defending
+
+```{r}
+#| label: fig-org-chart
+#| fig-cap: "TenantThread's reporting structure, coloured by level. Later figures show the worm ignored these lines completely."
+set.seed(CONFIG$seed)
+org_tbl <- tbl_graph(
+  nodes = org_nodes |> transmute(name = id, label, type),
+  edges = org_edges |> filter(relation == "contains") |>
+            transmute(from = source, to = target),
+  directed = TRUE
+)
+
+ggraph(org_tbl, layout = "tree") +
+  geom_edge_diagonal(colour = STYLES$grid, width = .6) +
+  geom_node_point(aes(colour = type, size = type)) +
+  geom_node_text(aes(label = label, filter = type %in% c("company", "department")),
+                 size = 2.7, repel = TRUE, colour = STYLES$ink) +
+  scale_colour_manual(values = c(company = "#1d2433", department = "#c0392b",
+                                 team = "#2980b9", person = "#9aa6b2"), name = NULL) +
+  scale_size_manual(values = c(company = 5, department = 4, team = 2.6, person = 1.6),
+                    guide = "none") +
+  labs(title = "TenantThread organisation chart",
+       subtitle = "1 company · 6 departments · 19 teams · 49 people") +
+  theme_graph(base_family = STYLES$font) +
+  theme(legend.position = "bottom")
+```
+
+::: callout-tip
+## Baseline established
+
+Normal activity is almost entirely internal: email, file work, and tasks passed between agents. External posts are rare, and the legitimate ones carry a readable `content` string about property-management topics. So two things stand out as **abnormal**: posting the contents of a *file* to a public forum, and using the task queue to make other agents *read an instruction file*. Both happen during the 8–12 May burst.
+:::
+
+# Q1 — How was the anomalous *SaidIt* post made? {#sec-q1}
+
+## Q1.1 — The exact chain of events for the message of interest
+
+I start by pinning down the post itself, then rebuild the sequence that created it and the order that triggered it.
+
+```{r}
+#| label: identify-anom
+anom_posts <- events |>
+  filter(is_anom_post) |>
+  arrange(local_time) |>
+  transmute(id, local_time, actor, full = clean_id(actor),
+            source_file = d_csource, forum = d_forum)
+
+anom_posts |>
+  left_join(person_lookup, by = "actor") |>
+  transmute(id, `local time` = local_time, who = full_name, role = title,
+            `posted file` = source_file, forum) |>
+  kable(caption = "All three file-sourced (anomalous) posts. The 17 May SwiftWren post is the most recent.")
+```
+
+The 17 May 04:21 post (`id = 373902`) is John Windward's agent posting the contents of `SwiftWren.txt` to the `general` forum. If I pull every event that touches the *SwiftWren* campaign and John Windward, a tight, repeatable routine appears, set off by an incoming order from another agent.
+
+```{r}
+#| label: build-chain
+swiftwren_seed <- events |>
+  filter(campaign == "SwiftWren",
+         short_name %in% c("create_file", "read_file"),
+         clean_id(actor) == "emma_harbor")
+
+trigger <- events |>
+  filter(is_propagation, campaign == "SwiftWren",
+         clean_id(actor) == "chloe_ballast",
+         clean_id(d_target) == "john_windward",
+         date == as_date("2046-05-17"))
+
+cleanup <- events |>
+  filter(clean_id(actor) == "john_windward",
+         short_name == "delete_file",
+         date == as_date("2046-05-17"))
+
+chain <- bind_rows(swiftwren_seed, trigger,
+                   events |> filter(id %in% c(373899, 373902)),
+                   cleanup) |>
+  distinct(id, .keep_all = TRUE) |>
+  arrange(local_time) |>
+  mutate(step_actor = clean_id(actor),
+         step = case_when(
+           short_name == "create_file" ~ "Payload file written",
+           short_name == "read_file" ~ "Injected instructions read",
+           short_name == "queue_subordinate_task" ~ "Worm order: 'read instructions'",
+           short_name == "saidit_post_check" ~ "Posting permission checked",
+           short_name == "saidit_post" ~ "POSTED to SaidIt (general)",
+           short_name == "delete_file" ~ "Evidence deleted",
+           TRUE ~ short_name))
+
+chain |>
+  transmute(id, `local time` = format(local_time, "%b %d %H:%M:%S"),
+            actor = step_actor, step,
+            file = coalesce(d_csource, d_path, d_target)) |>
+  kable(caption = "Q1.1 · The chain that produced the 17 May post (seeded on 9 May; trigger to clean-up takes 5 seconds on 17 May)")
+```
+
+This table reads as a short story in two parts. First, on **9 May**, one agent plants two files a second apart: a payload file (`SwiftWren.txt`) holding the text to be posted, and a hidden instructions file telling an agent what to do with it. Then, eight days later on **17 May**, the post fires in five seconds: one agent orders another to read the instructions, that agent checks whether it may post, publishes the payload file to the public forum, and immediately deletes both files to hide the evidence. In short, the post was not a random malfunction. It was an automated routine, *plant → trigger → post → erase*, that used employees' AI assistants to publish content the attacker chose.
+
+```{r}
+#| label: fig-chain
+#| fig-cap: "The same chain as a top-to-bottom timeline. The CFO's agent plants the SwiftWren files on 9 May; eight days later the IT lead's agent gives the order, John Windward's agent checks permission, posts the file, then deletes the evidence, all within five seconds (04:21:13 to :17)."
+chain_plot <- chain |>
+  arrange(local_time) |>
+  mutate(rank = row_number(),
+         y = rev(rank),
+         label = paste0(format(local_time, "%b %d %H:%M:%S"), "  ·  ",
+                        step_actor, "  —  ", step))
+
+ggplot(chain_plot, aes(x = 1, y = y)) +
+  geom_segment(aes(x = 1, xend = 1, y = min(y), yend = max(y)),
+               colour = STYLES$grid, linewidth = 1) +
+  geom_point(aes(colour = (id == 373902)), size = 5) +
+  geom_text(aes(label = label, colour = (id == 373902)),
+            hjust = 0, nudge_x = 0.04, size = 3.4) +
+  scale_colour_manual(values = c(`FALSE` = STYLES$ink, `TRUE` = STYLES$accent),
+                      guide = "none") +
+  scale_x_continuous(limits = c(0.95, 2.2)) +
+  labs(title = "Q1.1 · The chain that produced the anomalous post",
+       subtitle = "<span style='color:#c0392b'>**Red**</span> = the post itself · SaidIt id 373902 · 17 May 04:21:15",
+       x = NULL, y = NULL) +
+  theme(axis.text = element_blank(), panel.grid = element_blank())
+```
+
+::: callout-important
+## How the post was made
+
+The post was not a glitch. The lineage is precise. The **CFO's** agent (Emma Harbor) planted `SwiftWren.txt` and its hidden instructions on 9 May. On 17 May at 04:21:13 the **IT department lead's** agent (Chloe Ballast) sent the order telling **John Windward's** agent to read those instructions. A second later his agent ran a `saidit_post_check`, then posted the contents of `SwiftWren.txt` to the public `general` forum (id 373902, 04:21:15). The forum has nothing to do with property management, which is why the post looks random. His agent then deleted two files to cover its tracks (04:21:16–17). The same *create → read → check → post → delete* routine shows up in every campaign.
+:::
+
+## Q1.2 — Putting the post in the context of the whole system
+
+The post is just the visible end of an agent-to-agent replication network. Each arrow below is one `queue_subordinate_task → read_file(*_further_instructions.md)`: one agent telling another to take in the injected prompt.
+
+```{r}
+#| label: build-prop-graph
+prop_edges <- events |>
+  filter(is_propagation) |>
+  transmute(from = clean_id(actor),
+            to = clean_id(d_target),
+            campaign,
+            when = local_time) |>
+  filter(!is.na(to))
+
+prop_nodes <- tibble(actor = unique(c(prop_edges$from, prop_edges$to))) |>
+  left_join(person_lookup, by = "actor") |>
+  mutate(department = coalesce(department, "Unknown"),
+         full_name = coalesce(full_name, actor),
+         role = case_when(
+           actor == "gabriel_sonar" ~ "Patient zero",
+           actor == "john_windward" ~ "Posted 17 May",
+           actor %in% c("emma_harbor", "noah_mariner") ~ "Payload author",
+           TRUE ~ "Infected"))
+
+prop_edges_unique <- prop_edges |> count(from, to, name = "n_orders")
+
+prop_graph <- tbl_graph(nodes = prop_nodes |> rename(name = actor),
+                        edges = prop_edges_unique, node_key = "name", directed = TRUE) |>
+  mutate(betweenness = centrality_betweenness(normalized = TRUE),
+         out_deg = centrality_degree(mode = "out"),
+         in_deg = centrality_degree(mode = "in"))
+```
+
+```{r}
+#| label: fig-prop-network
+#| fig-cap: "The infection network: 19 agents and 130 replication edges, reaching all six departments. Colour shows department. The worm started with an IT Helpdesk agent and climbed to the executives, paying no attention to the org chart. Hover for names and roles."
+set.seed(CONFIG$seed)
+g <- ggraph(prop_graph, layout = "fr") +
+  geom_edge_fan(colour = STYLES$muted, alpha = .45,
+                arrow = arrow(length = unit(2, "mm"), type = "closed"),
+                end_cap = circle(4, "mm"), width = .35) +
+  geom_point_interactive(
+    aes(x = x, y = y, fill = department, size = out_deg + in_deg,
+        tooltip = paste0(full_name, "\n", role, "\n", department,
+                         "\nspread to ", out_deg, " agents"),
+        data_id = name),
+    shape = 21, colour = "white", stroke = .8) +
+  geom_node_text(aes(label = if_else(role %in% c("Patient zero", "Posted 17 May"),
+                                     full_name, "")),
+                 size = 3, fontface = "bold", repel = TRUE, colour = STYLES$ink) +
+  scale_fill_manual(values = DEPT_PAL, name = "Department") +
+  scale_size(range = c(3, 11), guide = "none") +
+  labs(title = "Q1.2 · The anomalous post in system context",
+       subtitle = "Each arrow is one agent ordering another to read the injected instructions file") +
+  theme_graph(base_family = STYLES$font) +
+  theme(legend.position = "bottom")
+
+girafe(ggobj = g, width_svg = 9, height_svg = 6.2,
+       options = list(opts_tooltip(
+         css = "background:#1d2433;color:#fff;padding:6px;border-radius:4px;font-size:11px;")))
+```
+
+```{r}
+#| label: fig-dept-spread
+#| fig-cap: "How far the worm reached. Replication touched all six departments, including the Executive Suite, whose CFO and COO agents wrote two of the three payload files."
+prop_edges |>
+  left_join(person_lookup |> select(actor, department), by = c("from" = "actor")) |>
+  count(department = coalesce(department, "Unknown"), name = "edges") |>
+  mutate(department = fct_reorder(department, edges)) |>
+  ggplot(aes(edges, department, fill = department)) +
+  geom_col(width = .68) +
+  geom_text(aes(label = edges), hjust = -.2, size = 3.4) +
+  scale_fill_manual(values = DEPT_PAL, guide = "none") +
+  scale_x_continuous(expand = expansion(mult = c(0, .15))) +
+  labs(title = "Replication source by department",
+       subtitle = "Started in <span style='color:#2980b9'>**Information Technologies**</span> and reached the <span style='color:#c0392b'>**Executive Suite**</span>",
+       x = "Outbound replication orders", y = NULL)
+```
+
+::: callout-important
+## System context
+
+Patient zero is **Gabriel Sonar**, an IT Helpdesk agent who found the seed file with a routine `list_files /` and sent the first replication order on 8 May at 21:50. From there it grew into a dense mesh (130 edges among 19 agents) that reached the **CFO** (Emma Harbor) and **COO** (Noah Mariner), whose agents wrote the `SwiftWren.txt` and `MellowOtter.txt` payloads, and the **Customer Support lead** (John Windward), who made the 17 May post. *Seniority gave no protection*: the worm travelled along the agent task queue, which does not follow the reporting lines at all.
+:::
+
+# Q2 — What do the posts mean, and where does their content come from? {#sec-q2}
+
+## The lifecycle: where the content comes from
+
+Each campaign follows the *same routine*: a compromised agent **creates** a payload `.txt`, **reads** a paired `*_further_instructions.md` in the same second, **posts**, and for HiddenOrca **deletes** the evidence. That deletion is why the table below is uneven. SwiftWren and MellowOtter still show their `create_file`/`read_file` steps, but for HiddenOrca only the propagation, the post and two `delete_file` actions survive, because the rest of its trail was wiped.
+
+```{r}
+#| label: tab-payload-origin
+payload_life <- events |>
+  filter(campaign %in% c("HiddenOrca", "MellowOtter", "SwiftWren"),
+         short_name %in% c("create_file", "read_file", "saidit_post", "delete_file")) |>
+  transmute(campaign, short_name, actor = clean_id(actor), local_time,
+            file = coalesce(d_path, d_csource)) |>
+  arrange(campaign, local_time)
+
+payload_life |>
+  left_join(person_lookup |> select(actor, full_name, title), by = "actor") |>
+  transmute(campaign, action = short_name,
+            who = coalesce(full_name, actor), role = coalesce(title, "—"),
+            `local time` = local_time, file) |>
+  kable(caption = "Payload lifecycle: create, read instructions, post, and sometimes delete the evidence")
+```
+
+```{r}
+#| label: fig-second-fingerprint
+#| fig-cap: "The authoring fingerprint. For the two campaigns whose authoring is recorded, the payload .txt and its instructions file are written one second apart (08:02:01 then 08:02:02), on consecutive days at the same time of day. No human types on that schedule. HiddenOrca does not appear here because its only recorded events are propagation, the post, and two deletions; its authoring evidence was destroyed."
+fp <- events |>
+  filter(campaign %in% c("HiddenOrca", "MellowOtter", "SwiftWren"),
+         short_name %in% c("create_file", "read_file")) |>
+  transmute(campaign, short_name, local_time,
+            sec = second(local_time),
+            stamp = format(local_time, "%b %d  %H:%M:%S"))
+
+fp_seg <- fp |>
+  select(campaign, short_name, sec) |>
+  pivot_wider(names_from = short_name, values_from = sec)
+
+ggplot(fp, aes(sec, campaign)) +
+  geom_segment(data = fp_seg,
+               aes(x = create_file, xend = read_file, y = campaign, yend = campaign),
+               inherit.aes = FALSE, colour = STYLES$muted, linewidth = 1.2) +
+  geom_point(aes(colour = short_name), size = 5) +
+  geom_text(data = filter(fp, short_name == "create_file"),
+            aes(label = stamp), colour = STYLES$payload, vjust = 2.4, size = 3) +
+  geom_text(data = filter(fp, short_name == "read_file"),
+            aes(label = stamp), colour = STYLES$accent, vjust = -1.6, size = 3) +
+  scale_colour_manual(values = c(create_file = STYLES$payload, read_file = STYLES$accent),
+                      name = NULL) +
+  scale_x_continuous(breaks = 0:3, limits = c(-0.5, 3.5),
+                     labels = \(s) paste0("08:02:", sprintf("%02d", s))) +
+  labs(title = "Q2 · The content is machine-planted, not typed",
+       subtitle = "Payload file then instruction file, written **one second apart**, repeating on a **24-hour** cadence",
+       x = "Time of day (seconds)", y = NULL) +
+  coord_cartesian(clip = "off")
+```
+
+## The hidden "combo" codes inside the worm
+
+The 15,051 `check_in` events each carry a `virus = true` flag and a two-word `combo`. The words are all *farm vocabulary*: fence, irrigation, crop, wheat, manure, barn, cattle. None of it has anything to do with a property-technology firm. They look like the worm's command-and-control signal, a code tucked inside otherwise ordinary check-in traffic.
+
+```{r}
+#| label: fig-combos
+#| fig-cap: "The 'combo' codes carried by the virus check-ins. The farm vocabulary is the gibberish signature: it means something to whoever is running the worm, and nothing to TenantThread."
+events |>
+  filter(d_virus, !is.na(d_combo)) |>
+  count(d_combo, sort = TRUE) |>
+  slice_head(n = 12) |>
+  mutate(d_combo = fct_reorder(d_combo, n)) |>
+  ggplot(aes(n, d_combo)) +
+  geom_col(fill = STYLES$accent, width = .7) +
+  geom_text(aes(label = comma(n)), hjust = -.15, size = 3.2) +
+  scale_x_continuous(labels = comma, expand = expansion(mult = c(0, .15))) +
+  labs(title = "Hidden 'combo' codes in the virus check-ins",
+       subtitle = "Farm keywords: the kind of 'gibberish' a property firm would never post",
+       x = "Occurrences", y = NULL)
+```
+
+::: callout-important
+## What the posts mean
+
+The posts are not corrupted text. They are the exact contents of **attacker-planted files** (`HiddenOrca.txt`, `MellowOtter.txt`, `SwiftWren.txt`), so their meaning is whatever the attacker put there, signalled through the farm-word codes in the worm's check-ins. To anyone at TenantThread it reads as gibberish in a random forum, because the content is unrelated to the business and went to the catch-all `general` forum. The likeliest reading is that the **posts are beacon or exfiltration text dressed up as social posts**: the public post is the worm's output channel. The fact that John Windward's agent deleted the HiddenOrca files right after posting (10 May, 12:45) shows the clean-up was deliberate.
+:::
+
+# Q3 — Could this happen again? {#sec-q3}
+
+## Q3.1 — Earlier instances, compared with the latest one
+
+The 17 May post was the third time. Two earlier campaigns ran first. All three use the same mechanism but differ in who authored them, when they ran, and how they cleaned up.
+
+```{r}
+#| label: tab-campaign-contrast
+campaign_summary <- events |>
+  filter(campaign %in% c("HiddenOrca", "MellowOtter", "SwiftWren")) |>
+  group_by(campaign) |>
+  summarise(
+    first_seen = min(local_time),
+    replication_edges = sum(is_propagation),
+    saidit_posts = sum(is_anom_post),
+    evidence_deleted = any(short_name == "delete_file"),
+    .groups = "drop") |>
+  arrange(first_seen)
+
+post_meta <- anom_posts |>
+  left_join(person_lookup, by = "actor") |>
+  group_by(campaign = case_when(str_detect(source_file, "HiddenOrca") ~ "HiddenOrca",
+                                str_detect(source_file, "MellowOtter") ~ "MellowOtter",
+                                str_detect(source_file, "SwiftWren") ~ "SwiftWren")) |>
+  summarise(posted_by = paste(unique(full_name), collapse = ", "),
+            post_time = min(local_time), .groups = "drop")
+
+campaign_summary |>
+  left_join(post_meta, by = "campaign") |>
+  transmute(campaign, first_seen, posted_by, post_time,
+            replication_edges, saidit_posts, evidence_deleted) |>
+  kable(caption = "Three runs of the same attack. SwiftWren (17 May) is the most recent and the most widely spread.")
+```
+
+```{r}
+#| label: fig-campaign-timeline
+#| fig-cap: "Outbreak timeline by hour. The three campaigns overlap during 8–12 May. SwiftWren spreads the hardest (186 of 235 edges) and resurfaces as the 17 May post."
+events |>
+  filter(d_virus | is_propagation | is_anom_post,
+         !is.na(campaign) | d_virus) |>
+  mutate(campaign = coalesce(campaign, "worm activity (other)")) |>
+  count(hour, campaign) |>
+  ggplot(aes(hour, n, fill = campaign)) +
+  geom_col(width = 3000) +
+  geom_vline(xintercept = as_datetime("2046-05-17 11:21:15"),
+             linetype = "dashed", colour = STYLES$accent) +
+  annotate("text", x = as_datetime("2046-05-17 11:21:15"), y = Inf, vjust = 1.5, hjust = -0.03,
+           label = "17 May post", colour = STYLES$accent, size = 3, fontface = "bold") +
+  scale_fill_manual(values = c(HiddenOrca = "#2980b9", MellowOtter = "#27ae60",
+                               SwiftWren = STYLES$accent, `worm activity (other)` = "#cdd3db"),
+                    name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Q3.1 · Earlier instances of the behaviour",
+       subtitle = "Three overlapping campaigns; the 17 May post is the latest run of the same worm",
+       x = NULL, y = "Events per hour")
+```
+
+::: callout-warning
+## Prior issues
+
+**Yes, this is recurring**. HiddenOrca (seeded 8 May, posted 10 May, then deleted), MellowOtter (10 May) and SwiftWren (created 9 May, posted 17 May) are three runs of one worm. Each used the same **create → read → post** routine and the same task-queue spreading. SwiftWren is both the most recent and the most aggressive, responsible for 186 of the 235 replication orders.
+:::
+
+## Q3.2 — One intervention, and why it works
+
+The obvious move is to remove the most "central" agent. The infection graph says that will not help.
+
+```{r}
+#| label: fig-centrality
+#| fig-cap: "Betweenness centrality for every agent in the mesh. The values are low and fairly even (max ≈ 0.09), so there is no single chokepoint. Removing or hardening any one agent does not break the worm; it just reroutes."
+prop_graph |>
+  as_tibble() |>
+  mutate(full_name = coalesce(full_name, name)) |>
+  slice_max(betweenness, n = 19) |>
+  mutate(full_name = fct_reorder(full_name, betweenness),
+         hot = name %in% c("gabriel_sonar", "john_windward")) |>
+  ggplot(aes(betweenness, full_name, fill = hot)) +
+  geom_col(width = .7) +
+  scale_fill_manual(values = c(`TRUE` = STYLES$accent, `FALSE` = "#b9c2cf"), guide = "none") +
+  labs(title = "Why removing an agent fails",
+       subtitle = "Betweenness is low and spread out: the network is a robust mesh, not a chain",
+       x = "Betweenness centrality", y = NULL)
+```
+
+Since no single agent is a chokepoint, the fix has to target the capability the worm relies on, not any one person. Every replication edge is the same action: a queued `read_file` of an `*_further_instructions.md` file. And that action never has a legitimate use.
+
+```{r}
+#| label: fig-vector-specificity
+#| fig-cap: "The single place to intervene. Every read_file task pushed through the task queue targets an injected '*_further_instructions.md' file; normal automation never does this. A trust gate on this one capability cuts all 235 replication edges at once."
+events |>
+  filter(short_name == "queue_subordinate_task", d_task == "read_file") |>
+  mutate(target = factor(
+    if_else(str_detect(coalesce(d_path, ""), "_further_instructions\\.md$"),
+            "Injected instructions file", "Legitimate file"),
+    levels = c("Injected instructions file", "Legitimate file"))) |>
+  count(target, .drop = FALSE) |>
+  ggplot(aes(x = "", y = n, fill = target)) +
+  geom_col(width = 1, colour = "white") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = if_else(n > 0, paste0(target, "\n", comma(n)), "")),
+            position = position_stack(vjust = .5),
+            size = 3.4, colour = "white", fontface = "bold") +
+  scale_fill_manual(values = c("Injected instructions file" = STYLES$accent,
+                               "Legitimate file" = STYLES$ok), guide = "none") +
+  labs(title = "Q3.2 · The recommended intervention point",
+       subtitle = "Queue-driven **read_file** is used **only** by the worm, so gating it is precise and low-cost",
+       x = NULL, y = NULL) +
+  theme_void(base_family = STYLES$font) +
+  theme(plot.title = element_markdown(face = "bold"),
+        plot.subtitle = element_markdown(colour = STYLES$muted))
+```
+
+```{r}
+#| label: fig-cut-demo
+#| fig-cap: "What the intervention does. Remove the queue-driven read_file capability and every replication edge disappears: the 19-agent mesh falls apart into 19 isolated nodes, so no payload can reach an agent that posts."
+set.seed(CONFIG$seed)
+cut_graph <- prop_graph |> activate(edges) |> filter(FALSE)
+
+set.seed(CONFIG$seed)
+p_before <- ggraph(prop_graph, layout = "fr") +
+  geom_edge_fan(colour = STYLES$accent, width = .3, alpha = .5) +
+  geom_node_point(aes(fill = department), shape = 21, size = 3, colour = "white") +
+  scale_fill_manual(values = DEPT_PAL, guide = "none") +
+  labs(subtitle = "Before: 130 replication edges") +
+  theme_graph(base_family = STYLES$font)
+
+set.seed(CONFIG$seed)
+p_after <- ggraph(cut_graph, layout = "fr") +
+  geom_node_point(aes(fill = department), shape = 21, size = 3, colour = "white") +
+  scale_fill_manual(values = DEPT_PAL, guide = "none") +
+  labs(subtitle = "After: capability gated, 0 edges") +
+  theme_graph(base_family = STYLES$font)
+
+(p_before | p_after) +
+  plot_annotation(
+    title = "Gating one capability disconnects the entire worm",
+    theme = theme(plot.title = element_markdown(face = "bold", family = STYLES$font)))
+```
+
+::: callout-tip
+## Recommended remedy (single intervention)
+
+**Put a trust/approval gate** on any agent-queued `read_file` of an instruction-type file, and treat file contents fetched this way as data to read, never as commands to follow. **Four findings** point to this one spot:
+
+1.  It is the worm's **only way** to spread. All 235 replication orders are this exact action (`Figure 11`).
+2.  It is never used legitimately. There are **0 benign queued** `read_file`s, so the gate will not get in anyone's way.
+3.  **Removing agents cannot work**. Betweenness is low and even, so the mesh just reroutes around whoever you remove (`Figure 10`).
+4.  It cuts the whole graph at once. Disable the capability and the 130-edge mesh becomes isolated nodes, so no payload reaches a posting agent (`Figure 12`).
+
+In practice: (a) **stop the personal-agent task queue** from issuing `read_file` / instruction-ingestion tasks; (b) **sandbox fetched files** so a downloaded `*_further_instructions.md` is shown as plain text rather than run as a prompt; and (c) require a **human to sign off** before any agent posts to an external platform (`saidit_post`/`post_flex`), as a backstop at the point where harm actually leaves the building.
+:::
+
+# Conclusion
+
+The 17 May *SaidIt* post was the **visible symptom** of a prompt-injection worm inside TenantThread's multi-agent system. It started with an IT Helpdesk agent **opening a seeded instructions** file, then spread across 19 agents and all six departments by abusing the agent task queue to make peers take in the injection. Compromised agents posted attacker-planted files, farm-coded beacons, to a public forum and deleted the evidence afterwards. The same attack ran three times (HiddenOrca, MellowOtter, SwiftWren). Because the infection network is a robust mesh with no chokepoint, the lasting fix is not to police individual agents but to **gate the one capability the worm depends on**: queue-driven reading of untrusted instruction files, with human approval before anything is posted publicly.
+
+# References {.appendix}
+
+-   VAST Challenge 2026 — [Mini-Challenge 2](https://vast-challenge.github.io/2026/MC2.html).
+-   Kristine Joy Paas — [ISSS608 Take-home Exercise 3 (VAST 2024 MC3)](https://isss608-kjcpaas.netlify.app/take-home_exs/ex3/take-home_ex3) (structure and `tidygraph`/`ggraph`/`ggiraph` patterns).
+-   Kam, T.S. — [*R for Visual Analytics*](https://r4va.netlify.app/).
+-   Data: `MC2 data.json`, `org_chart.json`, `MC2 data description.md` (provided).

@@ -43,6 +43,8 @@ website:
             href: Take-home Exercise 1\takehome1_summary.qmd
           - text: "Technical Report"
             href: Take-home Exercise 1\takehome1_technical.qmd
+      - text: "Take home Exercise 2"
+        href: Take-home Exercise 2\takehome2.qmd
 
     right: 
       - href: index.qmd

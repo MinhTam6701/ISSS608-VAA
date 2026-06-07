@@ -1,0 +1,15 @@
+/* Light cosmetic layer for the MC2 write-up */
+body { font-size: 16px; }
+
+h1, h2, h3 { color: #1d2433; }
+
+.callout { border-radius: 6px; }
+
+/* Make tables a touch tighter */
+table { font-size: 0.9em; }
+
+/* Code folding button styling */
+.quarto-title-block .description { color: #6b7280; }
+
+/* Keep figures from touching captions too tightly */
+.quarto-figure { margin-bottom: 1.2rem; }
