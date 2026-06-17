@@ -671,7 +671,7 @@ ul.task-list li input[type="checkbox"] {
 ══════════════════════ -->
 <div class="stats-row">
   <div class="stat-card">
-    <div class="stat-number">15</div>
+    <div class="stat-number">19</div>
     <div class="stat-label">Hands-on Exercises</div>
   </div>
   <div class="stat-card">
@@ -733,12 +733,12 @@ ul.task-list li input[type="checkbox"] {
 <!-- ══════════════════════
      COURSE WORK
 ══════════════════════ -->
-<div class="two-col">
+<div class="two-col" style="align-items: start;">
 
   <!-- Hands-on Exercises -->
-  <div>
-    <h2 class="section-title anchored">✍️ Hands-on Exercises</h2>
-    <div class="card-panel">
+  <div id="handson-col">
+    <h2 class="section-title anchored" id="handson-heading">✍️ Hands-on Exercises</h2>
+    <div class="card-panel" id="handson-panel" style="overflow-y: auto;">
       <ul class="exercise-list">
         <li>
           <div class="ex-badge">01</div>
@@ -815,22 +815,32 @@ ul.task-list li input[type="checkbox"] {
           <a class="ex-link" href="Hands on Exercises 7/hands-on7-2.html">Visualising High-Dimensional Data</a>
           <span class="ex-chapter">Ch 29</span>
         </li>
-        <!-- ─── ADD NEW HANDS-ON EXERCISES HERE ──────────────────────────────────
-             Pattern: increment badge number, update href folder/file & chapter.
-             Example next entry:
-             <li>
-               <div class="ex-badge">16</div>
-               <a class="ex-link" href="Hands on Exercises 8/hands-on8-1.html">Title Here</a>
-               <span class="ex-chapter">Ch XX</span>
-             </li>
-             Also update the stat-number in the stats row above (currently 15).
-        ──────────────────────────────────────────────────────────────────────── -->
+        <li>
+          <div class="ex-badge">16</div>
+          <a class="ex-link" href="Hands on Exercises 8/hands-on8.html">Visualising and Analysing Time-oriented Data</a>
+          <span class="ex-chapter">Ch 17</span>
+        </li>
+        <li>
+          <div class="ex-badge">17</div>
+          <a class="ex-link" href="Hands on Exercises 9/hands-on9-1.html">Choropleth Mapping with R</a>
+          <span class="ex-chapter">Ch 21</span>
+        </li>
+        <li>
+          <div class="ex-badge">18</div>
+          <a class="ex-link" href="Hands on Exercises 9/hands-on9-2.html">Visualising Geospatial Point Data</a>
+          <span class="ex-chapter">Ch 22</span>
+        </li>
+        <li>
+          <div class="ex-badge">19</div>
+          <a class="ex-link" href="Hands on Exercises 9/hands-on9-3.html">Analytical Mapping</a>
+          <span class="ex-chapter">Ch 23</span>
+        </li>
       </ul>
     </div>
   </div>
 
   <!-- Take-home Exercises -->
-  <div>
+  <div id="takehome-col">
     <h2 class="section-title anchored">📄 Take-home Exercises</h2>
     <div class="takehome-cards">
 
@@ -873,6 +883,26 @@ ul.task-list li input[type="checkbox"] {
 <!-- ══════════════════════
      FOOTER
 ══════════════════════ -->
+<script>
+(function () {
+  function syncHandsonHeight() {
+    var takehomeCol  = document.getElementById('takehome-col');
+    var handsonPanel = document.getElementById('handson-panel');
+    var handsonH2    = document.getElementById('handson-heading');
+    if (!takehomeCol || !handsonPanel || !handsonH2) return;
+    var h2Style  = getComputedStyle(handsonH2);
+    var h2Total  = handsonH2.offsetHeight
+                 + parseFloat(h2Style.marginTop  || 0)
+                 + parseFloat(h2Style.marginBottom || 0);
+    var panelH   = takehomeCol.offsetHeight - h2Total;
+    handsonPanel.style.height    = Math.max(panelH, 150) + 'px';
+    handsonPanel.style.maxHeight = Math.max(panelH, 150) + 'px';
+  }
+  window.addEventListener('load',   syncHandsonHeight);
+  window.addEventListener('resize', syncHandsonHeight);
+})();
+</script>
+
 <div class="footer-strip">
   <p>© 2024–25 · Trinh Minh Tam · ISSS608 Visual Analytics &amp; Applications · Singapore Management University</p>
   <div style="display:flex;gap:1rem;">
