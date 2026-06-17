@@ -43,6 +43,8 @@ website:
             href: Hands on Exercises 9\hands-on9-1.qmd
           - text: "Hands-on Exercise 9.2 (Chap 22)"
             href: Hands on Exercises 9\hands-on9-2.qmd
+          - text: "Hands-on Exercise 9.3 (Chap 23)"
+            href: Hands on Exercises 9\hands-on9-3.qmd
       - text: "Take home Exercise 1"
         menu: 
           - text: "Executive Summary"
